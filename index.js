@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import express from 'express';
+import { createServer as createHttpServer } from 'http';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
@@ -40,16 +40,15 @@ const tools = [
 const toolRegistry = {};
 tools.forEach(tool => { toolRegistry[tool.name] = tool; });
 
-// Track active transports for cleanup
+// Track active transports
 const activeTransports = new Map();
 
-function createServer() {
+function createMCPServer() {
   const server = new Server(
     { name: 'abis-mcp', version: '3.1.0' },
     { capabilities: { tools: {} } }
   );
 
-  // List tools handler
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: tools.map(tool => ({
       name: tool.name,
@@ -58,7 +57,6 @@ function createServer() {
     })),
   }));
 
-  // Call tool handler
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
     const tool = toolRegistry[name];
@@ -84,50 +82,96 @@ function createServer() {
   return server;
 }
 
-// ─── SSE mode (default) ────────────────────────────────────
+// ─── SSE mode (default) — uses raw Node http (zero Express issues) ──
 async function startSSE() {
   await connectDB();
 
-  const app = express();
   const PORT = parseInt(process.env.PORT || '3100', 10);
 
-  // Health check
-  app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', server: 'abis-mcp', version: '3.1.0', tools: tools.length, transport: 'sse' });
-  });
+  const httpServer = createHttpServer(async (req, res) => {
+    // CORS
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  // SSE endpoint — client connects here to receive events
-  app.get('/sse', async (req, res) => {
-    console.log('[ABIS MCP] New SSE connection');
-    const server = createServer();
-    const transport = new SSEServerTransport('/messages', res);
-    const sessionId = transport.sessionId;
-    activeTransports.set(sessionId, transport);
-
-    res.on('close', () => {
-      console.log(`[ABIS MCP] SSE connection closed: ${sessionId}`);
-      activeTransports.delete(sessionId);
-      server.close().catch(() => {});
-    });
-
-    await server.connect(transport);
-  });
-
-  // Message endpoint — client sends requests here
-  app.post('/messages', express.json(), async (req, res) => {
-    const sessionId = req.query.sessionId;
-    const transport = activeTransports.get(sessionId);
-
-    if (!transport) {
-      res.status(400).json({ error: 'No active SSE session for this sessionId' });
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204);
+      res.end();
       return;
     }
 
-    await transport.handlePostMessage(req, res);
+    const url = new URL(req.url, `http://localhost:${PORT}`);
+
+    // Health check
+    if (req.method === 'GET' && url.pathname === '/health') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        status: 'ok',
+        server: 'abis-mcp',
+        version: '3.1.0',
+        tools: tools.length,
+        transport: 'sse',
+        sessions: activeTransports.size,
+      }));
+      return;
+    }
+
+    // SSE endpoint — client connects here
+    if (req.method === 'GET' && url.pathname === '/sse') {
+      console.log('[ABIS MCP] New SSE connection');
+      try {
+        const mcpServer = createMCPServer();
+        const transport = new SSEServerTransport('/messages', res);
+        const sessionId = transport.sessionId;
+        activeTransports.set(sessionId, transport);
+
+        res.on('close', () => {
+          console.log(`[ABIS MCP] SSE closed: ${sessionId}`);
+          activeTransports.delete(sessionId);
+          mcpServer.close().catch(() => {});
+        });
+
+        await mcpServer.connect(transport);
+      } catch (err) {
+        console.error('[ABIS MCP] SSE error:', err);
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      }
+      return;
+    }
+
+    // Message endpoint — client POSTs JSON-RPC here
+    if (req.method === 'POST' && url.pathname === '/messages') {
+      const sessionId = url.searchParams.get('sessionId');
+      const transport = activeTransports.get(sessionId);
+
+      if (!transport) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'No active SSE session' }));
+        return;
+      }
+
+      try {
+        await transport.handlePostMessage(req, res);
+      } catch (err) {
+        console.error('[ABIS MCP] POST error:', err);
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      }
+      return;
+    }
+
+    // 404
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Not found', routes: ['/health', '/sse', '/messages'] }));
   });
 
-  app.listen(PORT, () => {
-    console.log(`ABIS MCP server v3.1.0 running on SSE — http://0.0.0.0:${PORT}/sse — 13 tools registered`);
+  httpServer.listen(PORT, '0.0.0.0', () => {
+    console.log(`ABIS MCP server v3.1.0 running on http://0.0.0.0:${PORT}/sse — 13 tools`);
   });
 }
 
@@ -136,7 +180,7 @@ async function startStdio() {
   const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
   await connectDB();
 
-  const server = createServer();
+  const server = createMCPServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error('ABIS MCP server v3.1.0 running on stdio — 13 tools registered');
