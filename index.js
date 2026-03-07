@@ -5,7 +5,7 @@ import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { connectDB } from './db.js';
 
-// Import all 35 tools (13 original + 20 Phase 2 + 2 Phase 5)
+// Import all 37 tools (13 original + 20 Phase 2 + 2 Phase 5 + 2 Phase 6)
 // ── Original 13 ──
 import ambientStatus from './tools/ambientStatus.js';
 import scoreMessage from './tools/scoreMessage.js';
@@ -56,6 +56,10 @@ import trainingStatus from './tools/trainingStatus.js';
 // ── Group G: Phase 5 Advanced (2) ──
 import correctorStrategies from './tools/correctorStrategies.js';
 import stressBenchmark from './tools/stressBenchmark.js';
+
+// ── Group H: Phase 6 Fixes (2) ──
+import correctorHistory from './tools/correctorHistory.js';
+import casTrends from './tools/casTrends.js';
 
 const tools = [
   // Original 13
@@ -108,6 +112,10 @@ const tools = [
   // Group G: Phase 5 Advanced
   correctorStrategies, // 34. List correction strategies
   stressBenchmark,     // 35. Run stress benchmark
+
+  // Group H: Phase 6 Fixes
+  correctorHistory,    // 36. Correction strategy effectiveness
+  casTrends,           // 37. CAS contributor trends
 ];
 
 // Build tool registry
@@ -119,7 +127,7 @@ const activeTransports = new Map();
 
 function createMCPServer() {
   const server = new Server(
-    { name: 'abis-mcp', version: '3.3.0' },
+    { name: 'abis-mcp', version: '3.4.0' },
     { capabilities: { tools: {} } }
   );
 
@@ -182,7 +190,7 @@ async function startSSE() {
       res.end(JSON.stringify({
         status: 'ok',
         server: 'abis-mcp',
-        version: '3.3.0',
+        version: '3.4.0',
         tools: tools.length,
         transport: 'sse',
         sessions: activeTransports.size,
@@ -245,7 +253,7 @@ async function startSSE() {
   });
 
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`ABIS MCP server v3.3.0 running on http://0.0.0.0:${PORT}/sse — 35 tools`);
+    console.log(`ABIS MCP server v3.3.0 running on http://0.0.0.0:${PORT}/sse — 37 tools`);
   });
 }
 
@@ -257,7 +265,7 @@ async function startStdio() {
   const server = createMCPServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('ABIS MCP server v3.3.0 running on stdio — 35 tools registered');
+  console.error('ABIS MCP server v3.3.0 running on stdio — 37 tools registered');
 }
 
 // ─── Entrypoint ────────────────────────────────────────────
