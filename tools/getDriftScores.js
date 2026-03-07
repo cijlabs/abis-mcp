@@ -1,30 +1,42 @@
-const fetch = require('node-fetch');
-const { ABIS_API_URL, ABIS_ADMIN_KEY } = require('../config');
+import { apiGet } from '../api.js';
 
-module.exports = {
+export default {
   name: 'abis_get_drift_scores',
-  description: 'Get the latest behavioral drift scores for all 8 monitored LLM models: gpt-4o, claude-opus-4.6, claude-sonnet-4.5, claude-haiku-4.5, deepseek-v3.2, deepseek-r1, gpt-5.2, gpt-5.2-instant. Scores range 0.0–1.0. Thresholds: 0–0.2 stable (green), 0.2–0.4 minor drift (yellow), 0.4–0.6 moderate (orange), 0.6–0.8 significant (red), 0.8–1.0 critical (deep red). Note: scores above 0.90 across all models indicate baseline recalibration is needed, not genuine drift.',
+  description: 'Get live behavioral drift scores for all 8 monitored LLM models (gpt-4o, claude-opus-4.6, claude-sonnet-4.5, claude-haiku-4.5, deepseek-v3.2, deepseek-r1, gpt-5.2, gpt-5.2-instant). Returns model name, drift score, and prompt count. Use to answer "which model has lowest drift right now?"',
   inputSchema: {
     type: 'object',
     properties: {
-      model: {
-        type: 'string',
-        description: 'Optional. Filter to a specific model name. If omitted, returns all models.'
-      }
+      model: { type: 'string', description: 'Optional: filter to one model name.' },
     },
-    required: []
+    required: [],
   },
-  async execute(args) {
-    const endpoint = args.model
-      ? `${ABIS_API_URL}/drift/${encodeURIComponent(args.model)}`
-      : `${ABIS_API_URL}/drift/all`;
 
-    const res = await fetch(endpoint, {
-      headers: { 'X-Admin-Key': ABIS_ADMIN_KEY }
-    });
-    const data = await res.json();
-    return {
-      content: [{ type: 'text', text: JSON.stringify(data, null, 2) }]
-    };
+  async execute(args) {
+    if (args.model) {
+      const data = await apiGet(`/drift/${encodeURIComponent(args.model)}`);
+      if (!data) return { content: [{ type: 'text', text: `ABIS: Could not fetch drift for ${args.model} — API offline.` }] };
+      return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
+    }
+
+    // Fetch aggregate for richer data
+    const aggregate = await apiGet('/aggregate');
+    if (!aggregate || !aggregate.benchmarks || aggregate.benchmarks.length === 0) {
+      return { content: [{ type: 'text', text: 'ABIS: No benchmark data available. Run a benchmark first.' }] };
+    }
+
+    // Find the run with most data
+    const best = aggregate.benchmarks.reduce((a, b) => (b.total_calls > a.total_calls ? b : a));
+
+    const lines = ['ABIS Live Drift Scores', '━━━━━━━━━━━━━━━━━━━━━━'];
+    if (best.models) {
+      best.models.forEach(m => {
+        const score = m.avg_drift != null ? m.avg_drift.toFixed(3) : 'N/A';
+        const icon = m.avg_drift == null ? '⬜' : m.avg_drift > 0.90 ? '🔴' : m.avg_drift > 0.65 ? '🟠' : m.avg_drift > 0.40 ? '🟡' : '🟢';
+        lines.push(`${icon} ${m.model.padEnd(25)} drift: ${score}  (${m.prompts_run} prompts)`);
+      });
+    }
+    lines.push('', `Date: ${best.date} | Total calls: ${best.total_calls}`);
+
+    return { content: [{ type: 'text', text: lines.join('\n') }] };
   }
 };

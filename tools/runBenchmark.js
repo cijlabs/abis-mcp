@@ -1,65 +1,48 @@
-const fetch = require('node-fetch');
-const { ABIS_API_URL, ABIS_ADMIN_KEY } = require('../config');
+import { v4 as uuid } from 'uuid';
+import { apiPost } from '../api.js';
+import { insertDoc } from '../db.js';
 
-module.exports = {
+export default {
   name: 'abis_run_benchmark',
-  description: 'Run a behavioral benchmark against one or all ABIS-monitored LLM models. Single model + prompt = instant result. Full benchmark (all 8 models x 20 prompts) = async, returns run_id, takes ~20 minutes. Use single benchmarks for quick checks. Use full benchmark for weekly drift tracking.',
+  description: 'Run a behavioral benchmark against ABIS-monitored models. mode=single: one model + one prompt = instant result. mode=full: all models x 20 prompts = async (~20 min). Returns drift scores and run_id.',
   inputSchema: {
     type: 'object',
     properties: {
-      mode: {
-        type: 'string',
-        enum: ['single', 'full'],
-        description: 'single = one model, one prompt, immediate result. full = all 8 models x 20 prompts, async (~20 mins).'
-      },
-      model: {
-        type: 'string',
-        description: 'Required if mode is single. The model name to benchmark (e.g. gpt-4o, claude-opus-4.6).'
-      },
-      prompt: {
-        type: 'string',
-        description: 'Required if mode is single. The prompt to send to the model for behavioral measurement.'
-      }
+      mode: { type: 'string', enum: ['single', 'full'], description: 'single = one model, one prompt. full = all models, async.' },
+      model: { type: 'string', description: 'Required for single mode. Model name (e.g. gpt-4o).' },
+      prompt: { type: 'string', description: 'Required for single mode. Prompt text to benchmark.' },
     },
-    required: ['mode']
+    required: ['mode'],
   },
-  async execute(args) {
+
+  async execute(args, sessionCtx) {
+    const sessionId = sessionCtx?.sessionId || 'unknown';
+
     if (args.mode === 'single') {
       if (!args.model || !args.prompt) {
-        return {
-          content: [{ type: 'text', text: 'Error: single mode requires both model and prompt.' }]
-        };
+        return { content: [{ type: 'text', text: 'Error: single mode requires both model and prompt.' }] };
       }
-      const res = await fetch(`${ABIS_API_URL}/benchmark/single`, {
-        method: 'POST',
-        headers: {
-          'X-Admin-Key': ABIS_ADMIN_KEY,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ model: args.model, prompt: args.prompt })
+      const result = await apiPost('/benchmark/single', { model: args.model, prompt: args.prompt });
+      if (!result) return { content: [{ type: 'text', text: 'ABIS: Benchmark failed — Railway API offline.' }] };
+
+      await insertDoc('mcp_benchmark_triggers', {
+        session_id: sessionId, timestamp: new Date(), triggered_by: 'user_request',
+        model: args.model, run_id: result.run_id || 'single', drift_before: result.drift_score || null,
       });
-      const data = await res.json();
-      return {
-        content: [{ type: 'text', text: JSON.stringify(data, null, 2) }]
-      };
+      return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
     }
 
     if (args.mode === 'full') {
-      const res = await fetch(`${ABIS_API_URL}/benchmark/run`, {
-        method: 'POST',
-        headers: {
-          'X-Admin-Key': ABIS_ADMIN_KEY,
-          'Content-Type': 'application/json'
-        }
+      const result = await apiPost('/benchmark/run', {});
+      if (!result) return { content: [{ type: 'text', text: 'ABIS: Full benchmark failed — Railway API offline.' }] };
+
+      await insertDoc('mcp_benchmark_triggers', {
+        session_id: sessionId, timestamp: new Date(), triggered_by: 'user_request',
+        model: 'all', run_id: result.run_id || 'full', drift_before: null,
       });
-      const data = await res.json();
-      return {
-        content: [{ type: 'text', text: `Full benchmark started. run_id: ${data.run_id || 'see response'}.\n\n${JSON.stringify(data, null, 2)}` }]
-      };
+      return { content: [{ type: 'text', text: `Full benchmark started.\nrun_id: ${result.run_id || 'pending'}\n\n${JSON.stringify(result, null, 2)}` }] };
     }
 
-    return {
-      content: [{ type: 'text', text: 'Error: mode must be "single" or "full".' }]
-    };
+    return { content: [{ type: 'text', text: 'Error: mode must be "single" or "full".' }] };
   }
 };
