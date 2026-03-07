@@ -5,7 +5,8 @@ import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { connectDB } from './db.js';
 
-// Import all 13 tools (10 original + 3 Layer 3 interceptor)
+// Import all 35 tools (13 original + 20 Phase 2 + 2 Phase 5)
+// ── Original 13 ──
 import ambientStatus from './tools/ambientStatus.js';
 import scoreMessage from './tools/scoreMessage.js';
 import getDriftScores from './tools/getDriftScores.js';
@@ -20,7 +21,44 @@ import driftGate from './tools/driftGate.js';
 import observe from './tools/observe.js';
 import simulate from './tools/simulate.js';
 
+// ── Group A: Memory (4) ──
+import memoryProfile from './tools/memoryProfile.js';
+import memoryTrend from './tools/memoryTrend.js';
+import memoryVersions from './tools/memoryVersions.js';
+import memoryCompare from './tools/memoryCompare.js';
+
+// ── Group B: Immune System (2) ──
+import immuneScan from './tools/immuneScan.js';
+import immuneAssess from './tools/immuneAssess.js';
+
+// ── Group C: Baseline & Monitoring (4) ──
+import baselineRecalibrate from './tools/baselineRecalibrate.js';
+import monitoringConfig from './tools/monitoringConfig.js';
+import monitoringPhase from './tools/monitoringPhase.js';
+import costReport from './tools/costReport.js';
+
+// ── Group D: Nervous System & Notifications (3) ──
+import nervousStatus from './tools/nervousStatus.js';
+import notificationConfig from './tools/notificationConfig.js';
+import notificationHistory from './tools/notificationHistory.js';
+
+// ── Group E: Ears, Versions, Patterns (4) ──
+import earsStatus from './tools/earsStatus.js';
+import earsCorrelations from './tools/earsCorrelations.js';
+import versionChanges from './tools/versionChanges.js';
+import historicalDrift from './tools/historicalDrift.js';
+
+// ── Group F: SDK, Pipeline, Training (3) ──
+import sdkSessions from './tools/sdkSessions.js';
+import pipelineStats from './tools/pipelineStats.js';
+import trainingStatus from './tools/trainingStatus.js';
+
+// ── Group G: Phase 5 Advanced (2) ──
+import correctorStrategies from './tools/correctorStrategies.js';
+import stressBenchmark from './tools/stressBenchmark.js';
+
 const tools = [
+  // Original 13
   ambientStatus,       // 1. Session start + drift snapshot
   scoreMessage,        // 2. Core ambient scoring
   getDriftScores,      // 3. Live drift for all models
@@ -34,6 +72,42 @@ const tools = [
   driftGate,           // 11. Layer 3 pre-response drift interceptor
   observe,             // 12. Layer 3 post-response observer
   simulate,            // 13. Layer 3 correction simulator
+
+  // Group A: Memory
+  memoryProfile,       // 14. Full behavioral memory profile
+  memoryTrend,         // 15. Score time-series trend
+  memoryVersions,      // 16. Silent version change detection
+  memoryCompare,       // 17. Cross-model comparison
+
+  // Group B: Immune System
+  immuneScan,          // 18. Historical immune scan
+  immuneAssess,        // 19. Real-time threat assessment
+
+  // Group C: Baseline & Monitoring
+  baselineRecalibrate, // 20. Recalibrate drift baselines
+  monitoringConfig,    // 21. Get monitoring config
+  monitoringPhase,     // 22. Change monitoring phase
+  costReport,          // 23. Monthly cost report
+
+  // Group D: Nervous System & Notifications
+  nervousStatus,       // 24. Event bus health
+  notificationConfig,  // 25. Notification preferences
+  notificationHistory, // 26. Notification delivery log
+
+  // Group E: Ears, Versions, Patterns
+  earsStatus,          // 27. EARS integration status
+  earsCorrelations,    // 28. Drift-business correlations
+  versionChanges,      // 29. Model version change history
+  historicalDrift,     // 30. Historical drift data
+
+  // Group F: SDK, Pipeline, Training
+  sdkSessions,         // 31. SDK customer sessions
+  pipelineStats,       // 32. Pipeline ingestion stats
+  trainingStatus,      // 33. Training pipeline status
+
+  // Group G: Phase 5 Advanced
+  correctorStrategies, // 34. List correction strategies
+  stressBenchmark,     // 35. Run stress benchmark
 ];
 
 // Build tool registry
@@ -45,7 +119,7 @@ const activeTransports = new Map();
 
 function createMCPServer() {
   const server = new Server(
-    { name: 'abis-mcp', version: '3.1.0' },
+    { name: 'abis-mcp', version: '3.3.0' },
     { capabilities: { tools: {} } }
   );
 
@@ -108,7 +182,7 @@ async function startSSE() {
       res.end(JSON.stringify({
         status: 'ok',
         server: 'abis-mcp',
-        version: '3.1.0',
+        version: '3.3.0',
         tools: tools.length,
         transport: 'sse',
         sessions: activeTransports.size,
@@ -171,7 +245,7 @@ async function startSSE() {
   });
 
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`ABIS MCP server v3.1.0 running on http://0.0.0.0:${PORT}/sse — 13 tools`);
+    console.log(`ABIS MCP server v3.3.0 running on http://0.0.0.0:${PORT}/sse — 35 tools`);
   });
 }
 
@@ -183,7 +257,7 @@ async function startStdio() {
   const server = createMCPServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('ABIS MCP server v3.1.0 running on stdio — 13 tools registered');
+  console.error('ABIS MCP server v3.3.0 running on stdio — 35 tools registered');
 }
 
 // ─── Entrypoint ────────────────────────────────────────────

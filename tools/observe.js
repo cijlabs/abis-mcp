@@ -120,6 +120,9 @@ export default {
       drift_signal: driftSignal,
       scorecard: {
         behavioral_health: scorecard.behavioral_health ?? null,
+        drift: scorecard.drift_score ?? drift,
+        correctability: scorecard.correctability_score ?? null,
+        anomaly: scorecard.anomaly_score ?? null,
         entropy: scorecard.entropy_score ?? null,
         coherence: scorecard.coherence_score ?? null,
         consistency: scorecard.consistency_score ?? null,
@@ -163,6 +166,7 @@ export default {
       `Health: ${(scorecard.behavioral_health || 0).toFixed(3)}`,
       `Entropy: ${(scorecard.entropy_score || 0).toFixed(3)} | Coherence: ${(scorecard.coherence_score || 0).toFixed(3)}`,
       `Consistency: ${(scorecard.consistency_score || 0).toFixed(3)} | Reasoning: ${(scorecard.reasoning_depth_score || 0).toFixed(3)}`,
+      `Correctability: ${(scorecard.correctability_score || 0).toFixed(3)} | Anomaly: ${(scorecard.anomaly_score || 0).toFixed(3)}`,
     ];
 
     if (driftDetected) {

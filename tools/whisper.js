@@ -81,7 +81,7 @@ export default {
           : d >= AMBIENT_DRIFT_THRESHOLD ? '\u{1F7E0} ALERT'
           : d > 0.40 ? '\u{1F7E1} WATCH'
           : '\u{1F7E2} STABLE';
-        lines.push(`  ${status} ${m.model}: ${d.toFixed(3)} drift (${m.drifts_detected || 0} drifts detected)`);
+        lines.push(`  ${status} ${m.model}: ${d.toFixed(3)} drift (${m.drifts_detected || 0} drifts, ${m.corrections_success || 0} corrections)`);
       });
     }
 

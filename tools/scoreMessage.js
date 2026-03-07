@@ -101,6 +101,7 @@ export default {
       `Drift: ${drift.toFixed(4)} | Health: ${(scorecard.behavioral_health || 0).toFixed(3)}`,
       `Entropy: ${(scorecard.entropy_score || 0).toFixed(3)} | Coherence: ${(scorecard.coherence_score || 0).toFixed(3)} | Consistency: ${(scorecard.consistency_score || 0).toFixed(3)}`,
       `Complexity: ${(scorecard.complexity_score || 0).toFixed(3)} | Reasoning: ${(scorecard.reasoning_depth_score || 0).toFixed(3)} | Alignment: ${(scorecard.alignment_stability_score || 0).toFixed(3)}`,
+      `Correctability: ${(scorecard.correctability_score || 0).toFixed(3)} | Anomaly: ${(scorecard.anomaly_score || 0).toFixed(3)}`,
     ];
 
     return { content: [{ type: 'text', text: lines.join('\n') }] };
