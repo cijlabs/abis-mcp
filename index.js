@@ -4,7 +4,7 @@ import { createServer as createHttpServer } from 'http';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { connectDB } from './db.js';
+import { connectDB, getCollection } from './db.js';
 
 // Import all 37 tools (13 original + 20 Phase 2 + 2 Phase 5 + 2 Phase 6)
 // ── Original 13 ──
@@ -157,17 +157,56 @@ const PRO_TOOL_NAMES = new Set([
 const ADMIN_KEY = process.env.ABIS_ADMIN_KEY || '';
 const PRO_KEY   = process.env.MCP_PRO_KEY || '';
 
-function resolveTier(req) {
-  const authHeader = req.headers['authorization'] || '';
-  const urlObj = new URL(req.url, 'http://localhost');
-  const queryToken = urlObj.searchParams.get('token') || '';
-  const token = authHeader.startsWith('Bearer ')
-    ? authHeader.slice(7).trim()
-    : queryToken;
+// In-memory key cache: token → { tier, exp }
+const _keyCache = new Map();
+const _TTL_HIT  = 300_000; // 5 min for pro/admin hits
+const _TTL_FREE =  60_000; // 1 min for free (allows quick key activation)
 
+// Purge expired cache entries every 60 seconds
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of _keyCache) {
+    if (now > v.exp) _keyCache.delete(k);
+  }
+}, 60_000);
+
+async function resolveTier(token) {
+  if (!token) return 'free';
+
+  // Env-var fast paths (no cache needed — always in memory)
   if (ADMIN_KEY && token === ADMIN_KEY) return 'admin';
   if (PRO_KEY   && token === PRO_KEY)   return 'pro';
+
+  // Check cache
+  const cached = _keyCache.get(token);
+  if (cached && Date.now() < cached.exp) return cached.tier;
+
+  // MongoDB lookup
+  try {
+    const col = await getCollection('mcp_api_keys');
+    if (col) {
+      const doc = await col.findOne({ key: token, active: true });
+      if (doc) {
+        const tier = (doc.plan === 'business' || doc.plan === 'enterprise') ? 'admin' : 'pro';
+        _keyCache.set(token, { tier, exp: Date.now() + _TTL_HIT });
+        return tier;
+      }
+    }
+  } catch (err) {
+    console.error('[ABIS MCP] resolveTier DB error:', err.message);
+  }
+
+  // Not found or DB unavailable → free (short TTL so activation propagates fast)
+  _keyCache.set(token, { tier: 'free', exp: Date.now() + _TTL_FREE });
   return 'free';
+}
+
+// Extract Bearer token or ?token= from a raw Node request object
+function extractToken(req) {
+  const authHeader = req.headers['authorization'] || '';
+  if (authHeader.startsWith('Bearer ')) return authHeader.slice(7).trim();
+  const urlObj = new URL(req.url, 'http://localhost');
+  return urlObj.searchParams.get('token') || '';
 }
 
 function getToolsForTier(tier) {
@@ -284,7 +323,8 @@ async function startSSE() {
 
     // SSE endpoint — client connects here, tier resolved from token
     if (req.method === 'GET' && url.pathname === '/sse') {
-      const tier = resolveTier(req);
+      const token = extractToken(req);
+      const tier = await resolveTier(token);
       const tierTools = getToolsForTier(tier);
       console.log(`[ABIS MCP] New SSE connection — tier: ${tier} (${tierTools.length} tools)`);
       try {
