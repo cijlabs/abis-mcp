@@ -1,0 +1,36 @@
+{
+  "name": "abis-drift-monitor",
+  "display_name": "ABIS — AI Behavioral Drift Monitor",
+  "description": "Real-time behavioral drift detection for 11 LLMs. 37 tools covering live drift scores, 9-score scorecards, silent version change detection, autonomous correction, immune threat assessment, and EU AI Act compliance reporting. Backed by Patent GB2521226.7.",
+  "version": "3.4.0",
+  "claude_plugin_version": "1.0",
+  "author": "CIJ Labs",
+  "homepage": "https://abis.cijlabs.com",
+  "repository": "https://github.com/cijlabs/abis-mcp",
+  "license": "MIT",
+  "categories": ["ai", "monitoring", "security", "compliance"],
+  "keywords": [
+    "drift", "llm-monitoring", "behavioral-ai", "ai-reliability",
+    "compliance", "eu-ai-act", "model-observability", "ai-security"
+  ],
+  "mcp_servers": {
+    "abis": {
+      "type": "sse",
+      "url": "https://abis-mcp-production.up.railway.app/sse"
+    }
+  },
+  "skills": [
+    "skills/abis-ops.md",
+    "skills/abis-alerts.md"
+  ],
+  "requires_auth": false,
+  "getting_started": "Once installed, ask: 'What is the current drift score for GPT-4o?' or 'Run ABIS daily check'. No API key required — connects directly to the ABIS cloud.",
+  "tool_count": 37,
+  "models_monitored": [
+    "gpt-4o", "gpt-5.2", "gpt-5.2-instant",
+    "claude-opus-4.6", "claude-sonnet-4.5", "claude-haiku-4.5",
+    "deepseek-v3.2", "deepseek-r1",
+    "gemini-2.5-pro", "gemini-2.5-flash", "gemini-3-flash"
+  ],
+  "patent": "GB2521226.7"
+}
