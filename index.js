@@ -62,80 +62,118 @@ import stressBenchmark from './tools/stressBenchmark.js';
 import correctorHistory from './tools/correctorHistory.js';
 import casTrends from './tools/casTrends.js';
 
-const tools = [
+// ─── All 37 tools (master list) ───────────────────────────────────────────
+const ALL_TOOLS = [
   // Original 13
-  ambientStatus,       // 1. Session start + drift snapshot
-  scoreMessage,        // 2. Core ambient scoring
-  getDriftScores,      // 3. Live drift for all models
-  getScorecard,        // 4. Full 9-score behavioral scorecard
-  costAnalysis,        // 5. 7-day API cost analysis
-  runBenchmark,        // 6. Single/full benchmark
-  conversationHistory, // 7. Query scored conversation logs
-  generateReport,      // 8. NLG report generation
-  whisper,             // 9. Ambient whisper injection
-  costVsDrift,         // 10. 30-day cost vs drift matrix
-  driftGate,           // 11. Layer 3 pre-response drift interceptor
-  observe,             // 12. Layer 3 post-response observer
-  simulate,            // 13. Layer 3 correction simulator
+  ambientStatus,       // 1.  Session start + drift snapshot
+  getDriftScores,      // 2.  Live drift for all models
+  getScorecard,        // 3.  Full 9-score behavioral scorecard
+  whisper,             // 4.  Ambient whisper injection
+  driftGate,           // 5.  Layer 3 pre-response drift interceptor
+  observe,             // 6.  Layer 3 post-response observer
+  historicalDrift,     // 7.  Drift time-series by model or date
+  versionChanges,      // 8.  All detected version changes across models
+  memoryVersions,      // 9.  Silent version change detection history
+  memoryCompare,       // 10. Cross-model stability ranking
+  correctorStrategies, // 11. List all 8 correction strategies
+  nervousStatus,       // 12. Event bus health
+  monitoringConfig,    // 13. Get monitoring config
+  earsStatus,          // 14. EARS integration status
+  generateReport,      // 15. NLG report generation (5 types)
 
-  // Group A: Memory
-  memoryProfile,       // 14. Full behavioral memory profile
-  memoryTrend,         // 15. Score time-series trend
-  memoryVersions,      // 16. Silent version change detection
-  memoryCompare,       // 17. Cross-model comparison
+  // Pro additions (tools 16-27)
+  scoreMessage,        // 16. Core ambient scoring
+  conversationHistory, // 17. Query scored conversation logs
+  memoryProfile,       // 18. Full behavioral memory profile
+  memoryTrend,         // 19. Score time-series trend
+  immuneAssess,        // 20. Real-time threat assessment
+  immuneScan,          // 21. Historical immune scan
+  simulate,            // 22. Layer 3 correction simulator
+  correctorHistory,    // 23. Correction strategy effectiveness
+  casTrends,           // 24. CAS contributor trends
+  costReport,          // 25. Monthly cost report
+  costVsDrift,         // 26. 30-day cost vs drift matrix
+  runBenchmark,        // 27. Single/full benchmark
 
-  // Group B: Immune System
-  immuneScan,          // 18. Historical immune scan
-  immuneAssess,        // 19. Real-time threat assessment
-
-  // Group C: Baseline & Monitoring
-  baselineRecalibrate, // 20. Recalibrate drift baselines
-  monitoringConfig,    // 21. Get monitoring config
-  monitoringPhase,     // 22. Change monitoring phase
-  costReport,          // 23. Monthly cost report
-
-  // Group D: Nervous System & Notifications
-  nervousStatus,       // 24. Event bus health
-  notificationConfig,  // 25. Notification preferences
-  notificationHistory, // 26. Notification delivery log
-
-  // Group E: Ears, Versions, Patterns
-  earsStatus,          // 27. EARS integration status
-  earsCorrelations,    // 28. Drift-business correlations
-  versionChanges,      // 29. Model version change history
-  historicalDrift,     // 30. Historical drift data
-
-  // Group F: SDK, Pipeline, Training
-  sdkSessions,         // 31. SDK customer sessions
-  pipelineStats,       // 32. Pipeline ingestion stats
-  trainingStatus,      // 33. Training pipeline status
-
-  // Group G: Phase 5 Advanced
-  correctorStrategies, // 34. List correction strategies
-  stressBenchmark,     // 35. Run stress benchmark
-
-  // Group H: Phase 6 Fixes
-  correctorHistory,    // 36. Correction strategy effectiveness
-  casTrends,           // 37. CAS contributor trends
+  // Admin additions (tools 28-37)
+  costAnalysis,        // 28. 7-day API cost analysis by model
+  earsCorrelations,    // 29. Drift-business correlations
+  sdkSessions,         // 30. SDK customer sessions
+  notificationHistory, // 31. Notification delivery log
+  notificationConfig,  // 32. Get/set notification preferences
+  pipelineStats,       // 33. Pipeline ingestion stats
+  trainingStatus,      // 34. Training pipeline status
+  baselineRecalibrate, // 35. Recalibrate drift baselines
+  monitoringPhase,     // 36. Change monitoring phase
+  stressBenchmark,     // 37. Run stress benchmark
 ];
 
-// Build tool registry
-const toolRegistry = {};
-tools.forEach(tool => { toolRegistry[tool.name] = tool; });
+// ─── Tier definitions ─────────────────────────────────────────────────────
+//
+//  FREE  (15 tools) — no API key required
+//  PRO   (27 tools) — MCP_PRO_KEY env var
+//  ADMIN (37 tools) — ABIS_ADMIN_KEY env var
+//
+// Tool names in the FREE set are also included in PRO; PRO names are also
+// included in ADMIN. Tiers are additive.
 
-// Track active transports
-const activeTransports = new Map();
+const FREE_TOOL_NAMES = new Set([
+  'abis_ambient_status',
+  'abis_get_drift_scores',
+  'abis_get_scorecard',
+  'abis_whisper',
+  'abis_drift_gate',
+  'abis_observe',
+  'abis_historical_drift',
+  'abis_version_changes',
+  'abis_memory_versions',
+  'abis_memory_compare',
+  'abis_corrector_strategies',
+  'abis_nervous_status',
+  'abis_monitoring_config',
+  'abis_ears_status',
+  'abis_generate_report',
+]);
 
-// ─── Bearer token auth — set MCP_ACCESS_TOKEN env var to enable ───────────
-const MCP_ACCESS_TOKEN = process.env.MCP_ACCESS_TOKEN || '';
+const PRO_TOOL_NAMES = new Set([
+  ...FREE_TOOL_NAMES,
+  'abis_score_message',
+  'abis_conversation_history',
+  'abis_memory_profile',
+  'abis_memory_trend',
+  'abis_immune_assess',
+  'abis_immune_scan',
+  'abis_simulate',
+  'abis_corrector_history',
+  'abis_cas_trends',
+  'abis_cost_report',
+  'abis_cost_vs_drift',
+  'abis_run_benchmark',
+]);
 
-function _checkMcpAuth(req) {
-  if (!MCP_ACCESS_TOKEN) return true; // open if no token configured
+// Admin gets all tools (PRO_TOOL_NAMES + 10 more — no separate Set needed)
+
+// ─── Auth + tier resolution ───────────────────────────────────────────────
+const ADMIN_KEY = process.env.ABIS_ADMIN_KEY || '';
+const PRO_KEY   = process.env.MCP_PRO_KEY || '';
+
+function resolveTier(req) {
   const authHeader = req.headers['authorization'] || '';
   const urlObj = new URL(req.url, 'http://localhost');
   const queryToken = urlObj.searchParams.get('token') || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : queryToken;
-  return token === MCP_ACCESS_TOKEN;
+  const token = authHeader.startsWith('Bearer ')
+    ? authHeader.slice(7).trim()
+    : queryToken;
+
+  if (ADMIN_KEY && token === ADMIN_KEY) return 'admin';
+  if (PRO_KEY   && token === PRO_KEY)   return 'pro';
+  return 'free';
+}
+
+function getToolsForTier(tier) {
+  if (tier === 'admin') return ALL_TOOLS;
+  if (tier === 'pro')   return ALL_TOOLS.filter(t => PRO_TOOL_NAMES.has(t.name));
+  return ALL_TOOLS.filter(t => FREE_TOOL_NAMES.has(t.name));
 }
 
 // ─── Rate limiting — 60 req/min per IP ────────────────────────────────────
@@ -154,14 +192,18 @@ function _checkRL(req) {
 }
 setInterval(() => { const now = Date.now(); for (const [k,v] of _rlStore) { if (now > v.t) _rlStore.delete(k); } }, 300_000);
 
-function createMCPServer() {
+// ─── MCP server factory (tier-scoped) ─────────────────────────────────────
+function createMCPServer(tierTools) {
+  const tierRegistry = {};
+  tierTools.forEach(tool => { tierRegistry[tool.name] = tool; });
+
   const server = new Server(
     { name: 'abis-mcp', version: '3.4.0' },
     { capabilities: { tools: {} } }
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: tools.map(tool => ({
+    tools: tierTools.map(tool => ({
       name: tool.name,
       description: tool.description,
       inputSchema: tool.inputSchema,
@@ -170,11 +212,11 @@ function createMCPServer() {
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
-    const tool = toolRegistry[name];
+    const tool = tierRegistry[name];
 
     if (!tool) {
       return {
-        content: [{ type: 'text', text: `Unknown tool: ${name}` }],
+        content: [{ type: 'text', text: `Tool '${name}' is not available on your current tier. Upgrade at abis.cijlabs.com/pricing` }],
         isError: true,
       };
     }
@@ -193,7 +235,10 @@ function createMCPServer() {
   return server;
 }
 
-// ─── SSE mode (default) — uses raw Node http (zero Express issues) ──
+// ─── Active sessions: sessionId → { transport, tier } ─────────────────────
+const activeSessions = new Map();
+
+// ─── SSE mode (default) — uses raw Node http ──────────────────────────────
 async function startSSE() {
   await connectDB();
 
@@ -231,29 +276,26 @@ async function startSSE() {
         status: 'ok',
         server: 'abis-mcp',
         version: '3.4.0',
-        tools: tools.length,
+        tiers: { free: 15, pro: 27, admin: 37 },
         transport: 'sse',
       }));
       return;
     }
 
-    // SSE endpoint — client connects here
+    // SSE endpoint — client connects here, tier resolved from token
     if (req.method === 'GET' && url.pathname === '/sse') {
-      if (!_checkMcpAuth(req)) {
-        res.writeHead(401, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Unauthorized. Provide: Authorization: Bearer <token>' }));
-        return;
-      }
-      console.log('[ABIS MCP] New SSE connection');
+      const tier = resolveTier(req);
+      const tierTools = getToolsForTier(tier);
+      console.log(`[ABIS MCP] New SSE connection — tier: ${tier} (${tierTools.length} tools)`);
       try {
-        const mcpServer = createMCPServer();
+        const mcpServer = createMCPServer(tierTools);
         const transport = new SSEServerTransport('/messages', res);
         const sessionId = transport.sessionId;
-        activeTransports.set(sessionId, transport);
+        activeSessions.set(sessionId, { transport, tier });
 
         res.on('close', () => {
-          console.log(`[ABIS MCP] SSE closed: ${sessionId}`);
-          activeTransports.delete(sessionId);
+          console.log(`[ABIS MCP] SSE closed: ${sessionId} (${tier})`);
+          activeSessions.delete(sessionId);
           mcpServer.close().catch(() => {});
         });
 
@@ -270,22 +312,17 @@ async function startSSE() {
 
     // Message endpoint — client POSTs JSON-RPC here
     if (req.method === 'POST' && url.pathname === '/messages') {
-      if (!_checkMcpAuth(req)) {
-        res.writeHead(401, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Unauthorized. Provide: Authorization: Bearer <token>' }));
-        return;
-      }
       const sessionId = url.searchParams.get('sessionId');
-      const transport = activeTransports.get(sessionId);
+      const session = activeSessions.get(sessionId);
 
-      if (!transport) {
+      if (!session) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'No active SSE session' }));
         return;
       }
 
       try {
-        await transport.handlePostMessage(req, res);
+        await session.transport.handlePostMessage(req, res);
       } catch (err) {
         console.error('[ABIS MCP] POST error:', err);
         if (!res.headersSent) {
@@ -302,22 +339,23 @@ async function startSSE() {
   });
 
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`ABIS MCP server v3.3.0 running on http://0.0.0.0:${PORT}/sse — 37 tools`);
+    console.log(`ABIS MCP server v3.4.0 running on http://0.0.0.0:${PORT}/sse — 3 tiers (15/27/37 tools)`);
   });
 }
 
-// ─── Stdio mode (fallback for terminal) ────────────────────
+// ─── Stdio mode (fallback for terminal) ────────────────────────────────────
 async function startStdio() {
   const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
   await connectDB();
 
-  const server = createMCPServer();
+  // Stdio connections default to admin tier (local use only)
+  const server = createMCPServer(ALL_TOOLS);
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('ABIS MCP server v3.3.0 running on stdio — 37 tools registered');
+  console.error('ABIS MCP server v3.4.0 running on stdio — 37 tools (admin tier)');
 }
 
-// ─── Entrypoint ────────────────────────────────────────────
+// ─── Entrypoint ────────────────────────────────────────────────────────────
 const mode = process.argv.includes('--stdio') ? 'stdio' : 'sse';
 
 if (mode === 'stdio') {

@@ -23,86 +23,85 @@ Or add to your `.mcp.json`:
 }
 ```
 
-No API key required. Connects directly to the ABIS cloud.
+No API key required for the Free tier. Connects directly to the ABIS cloud.
+
+## Access Tiers
+
+| Tier | Tools | Key Required | Includes |
+|------|-------|-------------|---------|
+| **Free** | 15 | None | Read-only drift scores, scorecards, version changes, report generation |
+| **Pro** | 27 | `MCP_PRO_KEY` | + Scoring pipeline, memory analysis, immune system, correction simulation, cost/drift reports |
+| **Admin** | 37 | `ABIS_ADMIN_KEY` | + Benchmarking, stress tests, monitoring config changes, pipeline stats, notifications |
+
+### Pro/Admin connection
+
+```json
+{
+  "mcpServers": {
+    "abis": {
+      "type": "sse",
+      "url": "https://abis-mcp-production.up.railway.app/sse",
+      "headers": {
+        "Authorization": "Bearer YOUR_KEY_HERE"
+      }
+    }
+  }
+}
+```
 
 ## 37 Tools
 
-### Drift & Scoring
+### Free Tier (15 tools — no key required)
+
 | Tool | Description |
 |------|-------------|
-| `abis_get_drift_scores` | Live drift scores for all 11 monitored models |
-| `abis_score_message` | Score any text through the behavioral pipeline |
-| `abis_get_scorecard` | Full 9-score breakdown (drift, coherence, entropy, alignment, etc.) |
 | `abis_ambient_status` | Quick snapshot of all models — call at session start |
+| `abis_get_drift_scores` | Live drift scores for all 11 monitored models |
+| `abis_get_scorecard` | Full 9-score breakdown (drift, coherence, entropy, alignment, etc.) |
 | `abis_whisper` | Contextual status line (clear / monitor / alert / critical) |
 | `abis_drift_gate` | Pre-response drift interceptor (Layer 3) |
 | `abis_observe` | Post-response observer — how ABIS learns (Layer 3) |
+| `abis_historical_drift` | Drift time-series by model or date |
+| `abis_version_changes` | All detected silent version changes across models |
+| `abis_memory_versions` | Silent version change detection history per model |
+| `abis_memory_compare` | Cross-model stability ranking |
+| `abis_corrector_strategies` | List all 8 correction strategies with severity levels |
+| `abis_nervous_status` | Event bus health, registered handlers, recent event log |
+| `abis_monitoring_config` | Current phase, tier assignments, cost estimate |
+| `abis_ears_status` | EARS webhook sources: Datadog, PagerDuty, Zendesk, Intercom |
+| `abis_generate_report` | 5 report types: daily_summary, drift_alert, migration_report, compliance_doc, investor_brief |
 
-### History & Memory
+### Pro Tier (27 tools — adds 12)
+
 | Tool | Description |
 |------|-------------|
-| `abis_historical_drift` | Drift time-series by model or date |
+| `abis_score_message` | Score any text through the behavioral pipeline |
 | `abis_conversation_history` | Scored conversation log with drift per turn |
 | `abis_memory_profile` | Full 30-day behavioral memory for a model |
 | `abis_memory_trend` | Time-series trend for any score dimension |
-| `abis_memory_compare` | Cross-model stability ranking |
-| `abis_memory_versions` | Silent version change detection history |
-| `abis_version_changes` | All detected version changes across models |
-| `abis_cas_trends` | What features drive drift (energy distance, entropy, coherence) |
-
-### Correction
-| Tool | Description |
-|------|-------------|
-| `abis_corrector_strategies` | List all 8 correction strategies with severity levels |
-| `abis_corrector_history` | Which strategies work best per model |
-| `abis_simulate` | Test a correction before applying it |
-
-### Immune System
-| Tool | Description |
-|------|-------------|
 | `abis_immune_assess` | Classify threat: CLEAN / ORGANIC_DRIFT / PROMPT_INJECTION / COORDINATED_ATTACK |
 | `abis_immune_scan` | Historical attack scan for a model |
-
-### Benchmarking
-| Tool | Description |
-|------|-------------|
-| `abis_run_benchmark` | Single or full benchmark run |
-| `abis_stress_benchmark` | 30 adversarial prompts across all models |
-| `abis_baseline_recalibrate` | Recompute drift baselines |
-
-### Monitoring & Config
-| Tool | Description |
-|------|-------------|
-| `abis_monitoring_config` | Current phase, tier assignments, cost estimate |
-| `abis_monitoring_phase` | Switch phase (BASELINE / AGGRESSIVE / SUSTAIN / SCALE) |
-
-### Reporting
-| Tool | Description |
-|------|-------------|
-| `abis_generate_report` | 5 report types: daily_summary, drift_alert, migration_report, compliance_doc, investor_brief |
-| `abis_cost_report` | Monthly API cost breakdown by model and tier |
+| `abis_simulate` | Test a correction before applying it |
+| `abis_corrector_history` | Which strategies work best per model |
+| `abis_cas_trends` | What features drive drift (energy distance, entropy, coherence) |
+| `abis_cost_report` | Estimated monthly API cost breakdown by model and tier |
 | `abis_cost_vs_drift` | 30-day cost vs drift matrix |
-| `abis_api_cost_analysis` | Most-called models with drift trajectory |
+| `abis_run_benchmark` | Single or full benchmark run |
 
-### Infrastructure
+### Admin Tier (37 tools — adds 10)
+
 | Tool | Description |
 |------|-------------|
-| `abis_nervous_status` | Event bus health, 13 handlers, recent event log |
+| `abis_api_cost_analysis` | Most-called models with drift trajectory over 7 days |
+| `abis_ears_correlations` | Drift vs business impact correlations |
+| `abis_sdk_sessions` | View SDK customer session history |
+| `abis_notification_history` | Recent alert delivery log |
+| `abis_notification_config` | Get/set alert preferences (email, Slack, webhook) |
 | `abis_pipeline_stats` | Ingestion statistics, vector counts |
 | `abis_training_status` | XGBoost AUC scores, retraining history |
-| `abis_ears_status` | Webhook sources: Datadog, PagerDuty, Zendesk, Intercom |
-| `abis_ears_correlations` | Drift vs business impact correlations |
-
-### Notifications
-| Tool | Description |
-|------|-------------|
-| `abis_notification_config` | Get/set alert preferences (email, Slack, webhook) |
-| `abis_notification_history` | Recent alert delivery log |
-
-### SDK
-| Tool | Description |
-|------|-------------|
-| `abis_sdk_sessions` | View SDK customer session history |
+| `abis_baseline_recalibrate` | Recompute drift baselines for all or one model |
+| `abis_monitoring_phase` | Switch phase (BASELINE / AGGRESSIVE / SUSTAIN / SCALE) |
+| `abis_stress_benchmark` | 30 adversarial prompts across all models |
 
 ## Included Skills
 
@@ -134,14 +133,12 @@ After installing, you get two skills:
 
 ## Self-Hosted / Local Setup
 
-If you want to run the MCP server locally:
-
 ```bash
 git clone https://github.com/cijlabs/abis-mcp
 cd abis-mcp
 npm install
 cp .env.example .env
-# Set ABIS_ADMIN_KEY and RAILWAY_URL in .env
+# Set ABIS_ADMIN_KEY, MCP_PRO_KEY, and RAILWAY_URL in .env
 node index.js
 ```
 
@@ -153,7 +150,7 @@ Add to Claude Code settings:
       "command": "node",
       "args": ["/path/to/abis-mcp/index.js"],
       "env": {
-        "ABIS_ADMIN_KEY": "your_key_here"
+        "ABIS_ADMIN_KEY": "your_admin_key_here"
       }
     }
   }
