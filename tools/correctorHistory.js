@@ -19,9 +19,10 @@ export default {
   },
 
   async execute(args) {
+    const days = Math.min(parseInt(args.days) || 30, 365);
     const params = new URLSearchParams();
     if (args.model) params.append('model', args.model);
-    if (args.days) params.append('days', String(args.days));
+    if (args.days) params.append('days', String(days));
     const qs = params.toString();
     const data = await apiGet(`/corrector/history${qs ? '?' + qs : ''}`);
 

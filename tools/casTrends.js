@@ -19,7 +19,7 @@ export default {
   },
 
   async execute(args) {
-    const days = args.days || 90;
+    const days = Math.min(parseInt(args.days) || 90, 365);
     const data = await apiGet(`/memory/cas-trends/${encodeURIComponent(args.model)}?days=${days}`);
 
     if (!data) {

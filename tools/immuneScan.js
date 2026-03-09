@@ -14,7 +14,7 @@ export default {
 
   async execute(args) {
     const model = encodeURIComponent(args.model);
-    const days = args.days || 7;
+    const days = Math.min(parseInt(args.days) || 7, 365);
     const data = await apiGet(`/immune/scan/${model}?days=${days}`);
 
     if (!data) {

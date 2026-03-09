@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { v4 as uuidv4 } from 'uuid';
 import { createServer as createHttpServer } from 'http';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
@@ -125,6 +126,34 @@ tools.forEach(tool => { toolRegistry[tool.name] = tool; });
 // Track active transports
 const activeTransports = new Map();
 
+// ─── Bearer token auth — set MCP_ACCESS_TOKEN env var to enable ───────────
+const MCP_ACCESS_TOKEN = process.env.MCP_ACCESS_TOKEN || '';
+
+function _checkMcpAuth(req) {
+  if (!MCP_ACCESS_TOKEN) return true; // open if no token configured
+  const authHeader = req.headers['authorization'] || '';
+  const urlObj = new URL(req.url, 'http://localhost');
+  const queryToken = urlObj.searchParams.get('token') || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : queryToken;
+  return token === MCP_ACCESS_TOKEN;
+}
+
+// ─── Rate limiting — 60 req/min per IP ────────────────────────────────────
+const _rlStore = new Map();
+const _RL_WINDOW = 60_000;
+const _RL_MAX = 60;
+
+function _checkRL(req) {
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || 'unknown';
+  const now = Date.now();
+  const e = _rlStore.get(ip) || { n: 0, t: now + _RL_WINDOW };
+  if (now > e.t) { e.n = 0; e.t = now + _RL_WINDOW; }
+  e.n++;
+  _rlStore.set(ip, e);
+  return e.n <= _RL_MAX;
+}
+setInterval(() => { const now = Date.now(); for (const [k,v] of _rlStore) { if (now > v.t) _rlStore.delete(k); } }, 300_000);
+
 function createMCPServer() {
   const server = new Server(
     { name: 'abis-mcp', version: '3.4.0' },
@@ -151,11 +180,11 @@ function createMCPServer() {
     }
 
     try {
-      return await tool.execute(args || {}, { sessionId: `mcp-${Date.now()}` });
+      return await tool.execute(args || {}, { sessionId: `mcp-${uuidv4()}` });
     } catch (err) {
       console.error(`[ABIS] Tool ${name} error:`, err.message);
       return {
-        content: [{ type: 'text', text: `ABIS tool error (${name}): ${err.message}` }],
+        content: [{ type: 'text', text: `ABIS: ${name} encountered an error. Contact support if this persists.` }],
         isError: true,
       };
     }
@@ -172,13 +201,24 @@ async function startSSE() {
 
   const httpServer = createHttpServer(async (req, res) => {
     // CORS
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    const _allowedOrigins = (process.env.MCP_ALLOWED_ORIGINS || 'https://abis.cijlabs.com').split(',').map(s => s.trim());
+    const _origin = req.headers['origin'] || '';
+    const _ao = _allowedOrigins.includes(_origin) ? _origin : _allowedOrigins[0];
+    res.setHeader('Access-Control-Allow-Origin', _ao);
+    res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
     if (req.method === 'OPTIONS') {
       res.writeHead(204);
       res.end();
+      return;
+    }
+
+    // Rate limiting — applies to all routes
+    if (!_checkRL(req)) {
+      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' });
+      res.end(JSON.stringify({ error: 'Rate limit exceeded. 60 req/min max.' }));
       return;
     }
 
@@ -193,13 +233,17 @@ async function startSSE() {
         version: '3.4.0',
         tools: tools.length,
         transport: 'sse',
-        sessions: activeTransports.size,
       }));
       return;
     }
 
     // SSE endpoint — client connects here
     if (req.method === 'GET' && url.pathname === '/sse') {
+      if (!_checkMcpAuth(req)) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Unauthorized. Provide: Authorization: Bearer <token>' }));
+        return;
+      }
       console.log('[ABIS MCP] New SSE connection');
       try {
         const mcpServer = createMCPServer();
@@ -218,7 +262,7 @@ async function startSSE() {
         console.error('[ABIS MCP] SSE error:', err);
         if (!res.headersSent) {
           res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: err.message }));
+          res.end(JSON.stringify({ error: 'Internal server error' }));
         }
       }
       return;
@@ -226,6 +270,11 @@ async function startSSE() {
 
     // Message endpoint — client POSTs JSON-RPC here
     if (req.method === 'POST' && url.pathname === '/messages') {
+      if (!_checkMcpAuth(req)) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Unauthorized. Provide: Authorization: Bearer <token>' }));
+        return;
+      }
       const sessionId = url.searchParams.get('sessionId');
       const transport = activeTransports.get(sessionId);
 
@@ -241,7 +290,7 @@ async function startSSE() {
         console.error('[ABIS MCP] POST error:', err);
         if (!res.headersSent) {
           res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: err.message }));
+          res.end(JSON.stringify({ error: 'Internal server error' }));
         }
       }
       return;
