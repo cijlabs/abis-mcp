@@ -12,7 +12,7 @@ export default {
   },
 
   async execute(args) {
-    const days = args.days || 7;
+    const days = Math.min(parseInt(args.days) || 7, 365);
     const col = await getCollection('mcp_message_scores');
     if (col === null) {
       return { content: [{ type: 'text', text: 'ABIS: MongoDB not connected. Cannot run cost analysis without persistence layer.' }] };

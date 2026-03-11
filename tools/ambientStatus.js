@@ -36,7 +36,8 @@ export default {
         modelLines = latest.models.map(m => {
           const score = m.avg_drift != null ? m.avg_drift.toFixed(3) : 'N/A';
           const status = m.avg_drift == null ? '⬜' : m.avg_drift > 0.90 ? '🔴' : m.avg_drift > 0.65 ? '🟠' : m.avg_drift > 0.40 ? '🟡' : '🟢';
-          return `  ${status} ${m.model}: ${score} (${m.prompts_run} prompts)`;
+          const corrections = `${m.corrections_success || 0}/${m.drifts_detected || 0} corrected`;
+          return `  ${status} ${m.model}: ${score} [${(m.min_drift||0).toFixed(3)}-${(m.max_drift||0).toFixed(3)}] (${m.prompts_run} prompts, ${corrections})`;
         }).join('\n');
       }
     }
