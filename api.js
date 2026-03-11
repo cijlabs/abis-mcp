@@ -52,7 +52,7 @@ export async function apiGet(path) {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
       const res = await fetchWithTimeout(`${RAILWAY_URL}${path}`, {
-        headers: { 'X-Admin-Key': ABIS_ADMIN_KEY },
+        headers: { 'X-API-Key': ABIS_ADMIN_KEY, 'X-Admin-Key': ABIS_ADMIN_KEY },
       }, TIMEOUT_MS_GET);
 
       if (res.status >= 500 && attempt < MAX_RETRIES) {

@@ -14,7 +14,7 @@ export default {
   },
 
   async execute(args) {
-    const hours = Math.min(parseInt(args.hours) || 24, 8760);
+    const hours = args.hours || 24;
     const col = await getCollection('mcp_conversation_logs');
     if (col === null) {
       return { content: [{ type: 'text', text: 'ABIS: MongoDB not connected. No conversation history available.' }] };

@@ -32,9 +32,7 @@ export default {
       best.models.forEach(m => {
         const score = m.avg_drift != null ? m.avg_drift.toFixed(3) : 'N/A';
         const icon = m.avg_drift == null ? '⬜' : m.avg_drift > 0.90 ? '🔴' : m.avg_drift > 0.65 ? '🟠' : m.avg_drift > 0.40 ? '🟡' : '🟢';
-        const range = (m.min_drift != null && m.max_drift != null) ? `[${m.min_drift.toFixed(3)}-${m.max_drift.toFixed(3)}]` : '';
-        const corrections = `${m.corrections_success || 0}/${m.drifts_detected || 0} corrected`;
-        lines.push(`${icon} ${m.model.padEnd(25)} drift: ${score} ${range}  ${m.prompts_run} prompts, ${corrections}`);
+        lines.push(`${icon} ${m.model.padEnd(25)} drift: ${score}  (${m.prompts_run} prompts)`);
       });
     }
     lines.push('', `Date: ${best.date} | Total calls: ${best.total_calls}`);

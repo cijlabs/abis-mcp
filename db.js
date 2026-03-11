@@ -11,13 +11,7 @@ export async function connectDB() {
     return null;
   }
   try {
-    client = new MongoClient(MONGODB_URI, {
-      serverSelectionTimeoutMS: 5000,
-      connectTimeoutMS: 5000,
-      socketTimeoutMS: 10000,
-      retryWrites: true,
-      retryReads: true,
-    });
+    client = new MongoClient(MONGODB_URI);
     await client.connect();
     db = client.db('abis');
 
