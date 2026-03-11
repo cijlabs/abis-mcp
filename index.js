@@ -215,29 +215,158 @@ function getToolsForTier(tier) {
   return ALL_TOOLS.filter(t => FREE_TOOL_NAMES.has(t.name));
 }
 
-// ─── Rate limiting — 60 req/min per IP ────────────────────────────────────
+// ─── Rate limiting — per-IP + per-key ──────────────────────────────────────
 const _rlStore = new Map();
 const _RL_WINDOW = 60_000;
-const _RL_MAX = 60;
+const _RL_MAX_IP = 60;       // 60 req/min per IP
+const _RL_MAX_FREE = 30;     // 30 req/min for free tier keys
+const _RL_MAX_PRO = 120;     // 120 req/min for pro tier keys
+const _RL_MAX_ADMIN = 300;   // 300 req/min for admin keys
 
-function _checkRL(req) {
-  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || 'unknown';
+function _checkRL(key, limit) {
   const now = Date.now();
-  const e = _rlStore.get(ip) || { n: 0, t: now + _RL_WINDOW };
+  const e = _rlStore.get(key) || { n: 0, t: now + _RL_WINDOW };
   if (now > e.t) { e.n = 0; e.t = now + _RL_WINDOW; }
   e.n++;
-  _rlStore.set(ip, e);
-  return e.n <= _RL_MAX;
+  _rlStore.set(key, e);
+  return e.n <= limit;
 }
+
+function checkRateLimits(req, tier) {
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || 'unknown';
+  // Per-IP check (always applied)
+  if (!_checkRL(`ip:${ip}`, _RL_MAX_IP)) return false;
+  // Per-tier check (stricter for free users)
+  const tierLimit = tier === 'admin' ? _RL_MAX_ADMIN : tier === 'pro' ? _RL_MAX_PRO : _RL_MAX_FREE;
+  const token = extractToken(req);
+  const tierKey = token ? `key:${token.substring(0, 8)}` : `ip:${ip}:tier`;
+  return _checkRL(tierKey, tierLimit);
+}
+
 setInterval(() => { const now = Date.now(); for (const [k,v] of _rlStore) { if (now > v.t) _rlStore.delete(k); } }, 300_000);
 
-// ─── MCP server factory (tier-scoped) ─────────────────────────────────────
-function createMCPServer(tierTools) {
+// ─── Per-tool authorization gate (runtime enforcement) ─────────────────────
+// Even though tools are filtered at SSE connection time, this provides
+// defense-in-depth: if a tool name somehow reaches CallToolRequestSchema
+// for a lower-tier session, it gets blocked here.
+
+const ADMIN_ONLY_TOOLS = new Set([
+  'abis_cost_analysis',
+  'abis_ears_correlations',
+  'abis_sdk_sessions',
+  'abis_notification_history',
+  'abis_notification_config',
+  'abis_pipeline_stats',
+  'abis_training_status',
+  'abis_baseline_recalibrate',
+  'abis_monitoring_phase',
+  'abis_stress_benchmark',
+]);
+
+const PRO_ONLY_TOOLS = new Set([
+  'abis_score_message',
+  'abis_conversation_history',
+  'abis_memory_profile',
+  'abis_memory_trend',
+  'abis_immune_assess',
+  'abis_immune_scan',
+  'abis_simulate',
+  'abis_corrector_history',
+  'abis_cas_trends',
+  'abis_cost_report',
+  'abis_cost_vs_drift',
+  'abis_run_benchmark',
+]);
+
+function checkToolAuthorization(toolName, tier) {
+  if (ADMIN_ONLY_TOOLS.has(toolName)) {
+    return tier === 'admin';
+  }
+  if (PRO_ONLY_TOOLS.has(toolName)) {
+    return tier === 'admin' || tier === 'pro';
+  }
+  return true; // FREE tools are available to all tiers
+}
+
+// ─── Input validation ──────────────────────────────────────────────────────
+const ALLOWED_MODELS = new Set([
+  'gpt-4o', 'claude-opus-4.6', 'claude-sonnet-4.5', 'claude-haiku-4.5',
+  'deepseek-v3.2', 'deepseek-r1', 'gpt-5.2', 'gpt-5.2-instant',
+  'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-3-flash',
+]);
+
+function validateArgs(toolName, args) {
+  const errors = [];
+
+  // Model name validation — applied to any tool that accepts a 'model' param
+  if (args.model !== undefined && args.model !== null && args.model !== '') {
+    if (typeof args.model !== 'string') {
+      errors.push('model must be a string');
+    } else if (args.model.length > 50) {
+      errors.push('model name too long (max 50 chars)');
+    } else if (!ALLOWED_MODELS.has(args.model)) {
+      errors.push(`Unknown model '${args.model}'. Valid: ${[...ALLOWED_MODELS].join(', ')}`);
+    }
+  }
+
+  // Numeric range validation
+  if (args.min_drift !== undefined) {
+    const v = Number(args.min_drift);
+    if (isNaN(v) || v < 0 || v > 1) errors.push('min_drift must be 0-1');
+  }
+  if (args.max_drift !== undefined) {
+    const v = Number(args.max_drift);
+    if (isNaN(v) || v < 0 || v > 1) errors.push('max_drift must be 0-1');
+  }
+  if (args.days !== undefined) {
+    const v = Number(args.days);
+    if (isNaN(v) || v < 1 || v > 365) errors.push('days must be 1-365');
+  }
+  if (args.limit !== undefined) {
+    const v = Number(args.limit);
+    if (isNaN(v) || v < 1 || v > 1000) errors.push('limit must be 1-1000');
+  }
+
+  // String length caps (prevent payload abuse)
+  if (args.response_text && args.response_text.length > 50_000) {
+    errors.push('response_text exceeds 50,000 char limit');
+  }
+  if (args.user_prompt && args.user_prompt.length > 10_000) {
+    errors.push('user_prompt exceeds 10,000 char limit');
+  }
+  if (args.context_hint && args.context_hint.length > 500) {
+    errors.push('context_hint exceeds 500 char limit');
+  }
+  if (args.session_id && args.session_id.length > 200) {
+    errors.push('session_id exceeds 200 char limit');
+  }
+
+  // Report type validation
+  if (args.report_type !== undefined) {
+    const valid = ['daily_summary', 'drift_alert', 'migration_report', 'compliance_doc', 'investor_brief'];
+    if (!valid.includes(args.report_type)) {
+      errors.push(`Invalid report_type. Valid: ${valid.join(', ')}`);
+    }
+  }
+
+  // Phase validation
+  if (args.phase !== undefined) {
+    const valid = ['BASELINE', 'AGGRESSIVE', 'SUSTAIN', 'SCALE'];
+    if (!valid.includes(args.phase)) {
+      errors.push(`Invalid phase. Valid: ${valid.join(', ')}`);
+    }
+  }
+
+  return errors;
+}
+
+// ─── MCP server factory (tier-scoped with runtime auth) ───────────────────
+function createMCPServer(tierTools, tier) {
   const tierRegistry = {};
   tierTools.forEach(tool => { tierRegistry[tool.name] = tool; });
 
   const server = new Server(
-    { name: 'abis-mcp', version: '3.4.0' },
+    { name: 'abis-mcp', version: '3.5.0' },
     { capabilities: { tools: {} } }
   );
 
@@ -251,8 +380,17 @@ function createMCPServer(tierTools) {
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
-    const tool = tierRegistry[name];
 
+    // ── Runtime auth gate (defense-in-depth) ──
+    if (!checkToolAuthorization(name, tier)) {
+      console.warn(`[ABIS MCP] AUTH BLOCKED: ${name} called by ${tier} tier`);
+      return {
+        content: [{ type: 'text', text: `Access denied: '${name}' requires ${ADMIN_ONLY_TOOLS.has(name) ? 'admin' : 'pro'} tier. Upgrade at abis.cijlabs.com/pricing` }],
+        isError: true,
+      };
+    }
+
+    const tool = tierRegistry[name];
     if (!tool) {
       return {
         content: [{ type: 'text', text: `Tool '${name}' is not available on your current tier. Upgrade at abis.cijlabs.com/pricing` }],
@@ -260,8 +398,18 @@ function createMCPServer(tierTools) {
       };
     }
 
+    // ── Input validation ──
+    const validationErrors = validateArgs(name, args || {});
+    if (validationErrors.length > 0) {
+      console.warn(`[ABIS MCP] VALIDATION FAILED: ${name} — ${validationErrors.join('; ')}`);
+      return {
+        content: [{ type: 'text', text: `Input validation failed for ${name}: ${validationErrors.join('; ')}` }],
+        isError: true,
+      };
+    }
+
     try {
-      return await tool.execute(args || {}, { sessionId: `mcp-${uuidv4()}` });
+      return await tool.execute(args || {}, { sessionId: `mcp-${uuidv4()}`, tier });
     } catch (err) {
       console.error(`[ABIS] Tool ${name} error:`, err.message);
       return {
@@ -299,10 +447,11 @@ async function startSSE() {
       return;
     }
 
-    // Rate limiting — applies to all routes
-    if (!_checkRL(req)) {
+    // Rate limiting — per-IP baseline (tier-aware limits applied at SSE connection)
+    const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || 'unknown';
+    if (!_checkRL(`ip:${ip}`, _RL_MAX_IP)) {
       res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' });
-      res.end(JSON.stringify({ error: 'Rate limit exceeded. 60 req/min max.' }));
+      res.end(JSON.stringify({ error: 'Rate limit exceeded. Try again later.' }));
       return;
     }
 
@@ -314,7 +463,7 @@ async function startSSE() {
       res.end(JSON.stringify({
         status: 'ok',
         server: 'abis-mcp',
-        version: '3.4.0',
+        version: '3.5.0',
         tiers: { free: 15, pro: 27, admin: 37 },
         transport: 'sse',
       }));
@@ -325,10 +474,18 @@ async function startSSE() {
     if (req.method === 'GET' && url.pathname === '/sse') {
       const token = extractToken(req);
       const tier = await resolveTier(token);
+
+      // Per-key rate limiting for SSE connections
+      if (!checkRateLimits(req, tier)) {
+        res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' });
+        res.end(JSON.stringify({ error: 'Rate limit exceeded for your tier. Upgrade for higher limits.' }));
+        return;
+      }
+
       const tierTools = getToolsForTier(tier);
       console.log(`[ABIS MCP] New SSE connection — tier: ${tier} (${tierTools.length} tools)`);
       try {
-        const mcpServer = createMCPServer(tierTools);
+        const mcpServer = createMCPServer(tierTools, tier);
         const transport = new SSEServerTransport('/messages', res);
         const sessionId = transport.sessionId;
         activeSessions.set(sessionId, { transport, tier });
@@ -389,7 +546,7 @@ async function startStdio() {
   await connectDB();
 
   // Stdio connections default to admin tier (local use only)
-  const server = createMCPServer(ALL_TOOLS);
+  const server = createMCPServer(ALL_TOOLS, 'admin');
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error('ABIS MCP server v3.4.0 running on stdio — 37 tools (admin tier)');
