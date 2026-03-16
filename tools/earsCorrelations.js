@@ -15,7 +15,7 @@ export default {
   async execute(args) {
     const params = [];
     if (args.model) params.push(`model=${encodeURIComponent(args.model)}`);
-    params.push(`days=${args.days || 7}`);
+    params.push(`days=${Math.min(parseInt(args.days) || 7, 365)}`);
     const query = params.length > 0 ? `?${params.join('&')}` : '';
 
     const data = await apiGet(`/ears/correlations${query}`);

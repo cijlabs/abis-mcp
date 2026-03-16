@@ -12,7 +12,7 @@ export default {
   },
 
   async execute(args) {
-    const days = args.days || 30;
+    const days = Math.min(parseInt(args.days) || 30, 365);
     const col = await getCollection('mcp_message_scores');
     if (col === null) {
       return { content: [{ type: 'text', text: 'ABIS: MongoDB not connected. Cannot generate cost-vs-drift matrix without persistence layer.' }] };
@@ -111,7 +111,8 @@ export default {
 
       return { content: [{ type: 'text', text: lines.join('\n') }] };
     } catch (err) {
-      return { content: [{ type: 'text', text: `ABIS: Cost-vs-drift query failed: ${err.message}` }] };
+      console.error('[ABIS] Cost-vs-drift query failed:', err.message);
+      return { content: [{ type: 'text', text: 'ABIS: Cost-vs-drift query failed. Try again later.' }] };
     }
   }
 };

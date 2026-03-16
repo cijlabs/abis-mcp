@@ -41,7 +41,8 @@ export default {
 
       return { content: [{ type: 'text', text: lines.join('\n') }] };
     } catch (err) {
-      return { content: [{ type: 'text', text: `ABIS: History query failed: ${err.message}` }] };
+      console.error('[ABIS] History query failed:', err.message);
+      return { content: [{ type: 'text', text: 'ABIS: History query failed. Try again later.' }] };
     }
   }
 };

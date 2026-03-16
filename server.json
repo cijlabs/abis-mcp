@@ -1,0 +1,42 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.cijlabs/abis-mcp",
+  "description": "AI behavioral drift monitoring for Claude Code — 37 tools tracking real-time drift across 11 LLM models with scorecards, silent version detection, immune threat assessment, and compliance reporting.",
+  "repository": {
+    "url": "https://github.com/cijlabs/abis-mcp",
+    "source": "github"
+  },
+  "version_detail": {
+    "version": "3.1.0",
+    "release_date": "2026-03-16",
+    "is_latest": true
+  },
+  "packages": [
+    {
+      "registry_name": "npm",
+      "name": "abis-mcp",
+      "version": "3.1.0",
+      "runtime": "node",
+      "runtime_arguments": [],
+      "package_arguments": [],
+      "environment_variables": [
+        {
+          "name": "MCP_PRO_KEY",
+          "description": "Pro tier API key (optional — free tier works without any key)",
+          "required": false
+        },
+        {
+          "name": "ABIS_ADMIN_KEY",
+          "description": "Admin tier API key (optional — for full 37-tool access)",
+          "required": false
+        }
+      ]
+    }
+  ],
+  "remotes": [
+    {
+      "transport_type": "sse",
+      "url": "https://abis-mcp-production.up.railway.app/sse"
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { v4 as uuidv4 } from 'uuid';
 import { createServer as createHttpServer } from 'http';
+import { timingSafeEqual } from 'crypto';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
@@ -22,13 +23,13 @@ import driftGate from './tools/driftGate.js';
 import observe from './tools/observe.js';
 import simulate from './tools/simulate.js';
 
-// ── Group A: Memory (4) ──
+// ── Group A: Behavioral Memory (4) ──
 import memoryProfile from './tools/memoryProfile.js';
 import memoryTrend from './tools/memoryTrend.js';
 import memoryVersions from './tools/memoryVersions.js';
 import memoryCompare from './tools/memoryCompare.js';
 
-// ── Group B: Immune System (2) ──
+// ── Group B: Threat Detection (2) ──
 import immuneScan from './tools/immuneScan.js';
 import immuneAssess from './tools/immuneAssess.js';
 
@@ -38,12 +39,12 @@ import monitoringConfig from './tools/monitoringConfig.js';
 import monitoringPhase from './tools/monitoringPhase.js';
 import costReport from './tools/costReport.js';
 
-// ── Group D: Nervous System & Notifications (3) ──
+// ── Group D: Event Bus & Notifications (3) ──
 import nervousStatus from './tools/nervousStatus.js';
 import notificationConfig from './tools/notificationConfig.js';
 import notificationHistory from './tools/notificationHistory.js';
 
-// ── Group E: Ears, Versions, Patterns (4) ──
+// ── Group E: Integrations, Versions, Patterns (4) ──
 import earsStatus from './tools/earsStatus.js';
 import earsCorrelations from './tools/earsCorrelations.js';
 import versionChanges from './tools/versionChanges.js';
@@ -170,12 +171,19 @@ setInterval(() => {
   }
 }, 60_000);
 
+function safeCompare(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  try {
+    return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+  } catch { return false; }
+}
+
 async function resolveTier(token) {
   if (!token) return 'free';
 
-  // Env-var fast paths (no cache needed — always in memory)
-  if (ADMIN_KEY && token === ADMIN_KEY) return 'admin';
-  if (PRO_KEY   && token === PRO_KEY)   return 'pro';
+  // Env-var fast paths — timing-safe comparison
+  if (ADMIN_KEY && safeCompare(token, ADMIN_KEY)) return 'admin';
+  if (PRO_KEY   && safeCompare(token, PRO_KEY))   return 'pro';
 
   // Check cache
   const cached = _keyCache.get(token);
@@ -201,12 +209,11 @@ async function resolveTier(token) {
   return 'free';
 }
 
-// Extract Bearer token or ?token= from a raw Node request object
+// Extract Bearer token from Authorization header only
 function extractToken(req) {
   const authHeader = req.headers['authorization'] || '';
   if (authHeader.startsWith('Bearer ')) return authHeader.slice(7).trim();
-  const urlObj = new URL(req.url, 'http://localhost');
-  return urlObj.searchParams.get('token') || '';
+  return '';
 }
 
 function getToolsForTier(tier) {
@@ -223,8 +230,24 @@ const _RL_MAX_FREE = 30;     // 30 req/min for free tier keys
 const _RL_MAX_PRO = 120;     // 120 req/min for pro tier keys
 const _RL_MAX_ADMIN = 300;   // 300 req/min for admin keys
 
+function _getClientIP(req) {
+  // Only trust XFF if behind Railway's proxy (RAILWAY_ENVIRONMENT set)
+  if (process.env.RAILWAY_ENVIRONMENT) {
+    const xff = (req.headers['x-forwarded-for'] || '').split(',');
+    // Trust the rightmost IP (closest to proxy)
+    const proxyIP = xff.length > 0 ? xff[xff.length - 1].trim() : '';
+    if (proxyIP) return proxyIP;
+  }
+  return req.socket?.remoteAddress || 'unknown';
+}
+
 function _checkRL(key, limit) {
   const now = Date.now();
+  // Cap store size to prevent memory exhaustion via spoofed IPs
+  if (_rlStore.size > 10_000) {
+    for (const [k, v] of _rlStore) { if (now > v.t) _rlStore.delete(k); }
+    if (_rlStore.size > 10_000) _rlStore.clear();
+  }
   const e = _rlStore.get(key) || { n: 0, t: now + _RL_WINDOW };
   if (now > e.t) { e.n = 0; e.t = now + _RL_WINDOW; }
   e.n++;
@@ -233,7 +256,7 @@ function _checkRL(key, limit) {
 }
 
 function checkRateLimits(req, tier) {
-  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || 'unknown';
+  const ip = _getClientIP(req);
   // Per-IP check (always applied)
   if (!_checkRL(`ip:${ip}`, _RL_MAX_IP)) return false;
   // Per-tier check (stricter for free users)
@@ -422,8 +445,10 @@ function createMCPServer(tierTools, tier) {
   return server;
 }
 
-// ─── Active sessions: sessionId → { transport, tier } ─────────────────────
+// ─── Active sessions: sessionId → { transport, tier, ip } ────────────────
 const activeSessions = new Map();
+const _MAX_SESSIONS = 200;
+const _MAX_SESSIONS_PER_IP = 5;
 
 // ─── SSE mode (default) — uses raw Node http ──────────────────────────────
 async function startSSE() {
@@ -472,6 +497,21 @@ async function startSSE() {
 
     // SSE endpoint — client connects here, tier resolved from token
     if (req.method === 'GET' && url.pathname === '/sse') {
+      const clientIP = _getClientIP(req);
+
+      // Connection limits
+      if (activeSessions.size >= _MAX_SESSIONS) {
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Server at capacity. Try again later.' }));
+        return;
+      }
+      const ipCount = [...activeSessions.values()].filter(s => s.ip === clientIP).length;
+      if (ipCount >= _MAX_SESSIONS_PER_IP) {
+        res.writeHead(429, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Too many connections from this IP.' }));
+        return;
+      }
+
       const token = extractToken(req);
       const tier = await resolveTier(token);
 
@@ -488,7 +528,7 @@ async function startSSE() {
         const mcpServer = createMCPServer(tierTools, tier);
         const transport = new SSEServerTransport('/messages', res);
         const sessionId = transport.sessionId;
-        activeSessions.set(sessionId, { transport, tier });
+        activeSessions.set(sessionId, { transport, tier, ip: clientIP });
 
         res.on('close', () => {
           console.log(`[ABIS MCP] SSE closed: ${sessionId} (${tier})`);

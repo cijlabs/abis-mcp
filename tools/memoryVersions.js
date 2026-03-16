@@ -14,7 +14,7 @@ export default {
 
   async execute(args) {
     const model = encodeURIComponent(args.model);
-    const days = args.days || 90;
+    const days = Math.min(parseInt(args.days) || 90, 365);
     const data = await apiGet(`/memory/versions/${model}?days=${days}`);
 
     if (!data) {

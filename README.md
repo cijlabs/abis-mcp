@@ -1,16 +1,52 @@
-# ABIS MCP — AI Behavioral Drift Monitor
+<p align="center">
+  <img src="https://abis.cijlabs.com/abis-logo.png" alt="ABIS Logo" width="120" />
+</p>
 
-Model Context Protocol server for **ABIS** — the deterministic AI behavioral drift monitoring platform by CIJ Labs.
+<h1 align="center">ABIS MCP Server</h1>
 
-Gives Claude Code native access to live drift scores, 9-score behavioral scorecards, silent version change detection, correction strategies, immune threat assessment, and compliance reporting — backed by **Patent GB2521226.7**.
+<p align="center">
+  <strong>AI Behavioral Drift Monitoring for Claude Code</strong>
+</p>
 
-## Quick Install (Claude Code Plugin)
+<p align="center">
+  <a href="https://github.com/cijlabs/abis-mcp/stargazers"><img src="https://img.shields.io/github/stars/cijlabs/abis-mcp?style=flat-square&color=yellow" alt="GitHub Stars" /></a>
+  <a href="https://www.npmjs.com/package/abis-mcp"><img src="https://img.shields.io/npm/v/abis-mcp?style=flat-square&color=red" alt="npm version" /></a>
+  <a href="https://github.com/cijlabs/abis-mcp/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License" /></a>
+  <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-%3E%3D18-green?style=flat-square" alt="Node.js" /></a>
+  <a href="https://abis.cijlabs.com"><img src="https://img.shields.io/badge/docs-abis.cijlabs.com-purple?style=flat-square" alt="Documentation" /></a>
+</p>
+
+<p align="center">
+  37 tools · 11 models · 3 tiers · Real-time drift detection · Patent-backed
+</p>
+
+---
+
+## What is ABIS?
+
+**ABIS** (Adaptive Behavioral Intelligence System) monitors LLM behavioral drift in real-time. It detects when AI models silently change — shifts in tone, reasoning depth, safety calibration, or capability — even when providers don't announce updates.
+
+This MCP server gives Claude Code native access to:
+- **Live drift scores** across 11 major models (GPT-4o, Claude, Gemini, DeepSeek)
+- **9-score behavioral scorecards** (drift, coherence, entropy, alignment, and more)
+- **Silent version change detection** — catches updates providers don't announce
+- **Immune threat assessment** — prompt injection, coordinated attacks, organic drift
+- **Correction simulation** — test fixes before applying them
+- **Compliance reporting** — EU AI Act, SOC 2, and investor briefs
+
+Backed by **Patent GB2521226.7** · Built by [CIJ Labs](https://cijlabs.com)
+
+## Quick Start
+
+### One-line install (Claude Code)
 
 ```bash
 /plugin install abis-drift-monitor
 ```
 
-Or add to your `.mcp.json`:
+### Manual setup
+
+Add to your `.mcp.json`:
 
 ```json
 {
@@ -23,17 +59,18 @@ Or add to your `.mcp.json`:
 }
 ```
 
-No API key required for the Free tier. Connects directly to the ABIS cloud.
+**No API key required** for the Free tier. Connects to the ABIS cloud instantly.
 
 ## Access Tiers
 
-| Tier | Tools | Key Required | Includes |
+| Tier | Tools | Key Required | What you get |
 |------|-------|-------------|---------|
-| **Free** | 15 | None | Read-only drift scores, scorecards, version changes, report generation |
-| **Pro** | 27 | `MCP_PRO_KEY` | + Scoring pipeline, memory analysis, immune system, correction simulation, cost/drift reports |
-| **Admin** | 37 | `ABIS_ADMIN_KEY` | + Benchmarking, stress tests, monitoring config changes, pipeline stats, notifications |
+| **Free** | 15 | None | Drift scores, scorecards, version changes, reports |
+| **Pro** | 27 | `MCP_PRO_KEY` | + Scoring pipeline, memory analysis, immune system, correction simulation |
+| **Admin** | 37 | `ABIS_ADMIN_KEY` | + Benchmarking, stress tests, config changes, pipeline stats |
 
-### Pro/Admin connection
+<details>
+<summary><strong>Pro/Admin connection</strong></summary>
 
 ```json
 {
@@ -49,9 +86,11 @@ No API key required for the Free tier. Connects directly to the ABIS cloud.
 }
 ```
 
+</details>
+
 ## 37 Tools
 
-### Free Tier (15 tools — no key required)
+### Free Tier (15 tools)
 
 | Tool | Description |
 |------|-------------|
@@ -71,7 +110,7 @@ No API key required for the Free tier. Connects directly to the ABIS cloud.
 | `abis_ears_status` | EARS webhook sources: Datadog, PagerDuty, Zendesk, Intercom |
 | `abis_generate_report` | 5 report types: daily_summary, drift_alert, migration_report, compliance_doc, investor_brief |
 
-### Pro Tier (27 tools — adds 12)
+### Pro Tier (+12 tools)
 
 | Tool | Description |
 |------|-------------|
@@ -88,7 +127,7 @@ No API key required for the Free tier. Connects directly to the ABIS cloud.
 | `abis_cost_vs_drift` | 30-day cost vs drift matrix |
 | `abis_run_benchmark` | Single or full benchmark run |
 
-### Admin Tier (37 tools — adds 10)
+### Admin Tier (+10 tools)
 
 | Tool | Description |
 |------|-------------|
@@ -105,7 +144,7 @@ No API key required for the Free tier. Connects directly to the ABIS cloud.
 
 ## Included Skills
 
-After installing, you get two skills:
+After installing, you get two built-in skills:
 
 - **`/abis-ops`** — Daily health check: drift snapshot, version changes, stability ranking, cost summary
 - **`/abis-alerts`** — Investigate a drift alert: scorecard deep-dive, CAS trends, threat classification, correction recommendation
@@ -114,24 +153,24 @@ After installing, you get two skills:
 
 | Provider | Models |
 |----------|--------|
-| OpenAI | gpt-4o, gpt-5.2, gpt-5.2-instant |
-| Anthropic | claude-opus-4.6, claude-sonnet-4.5, claude-haiku-4.5 |
-| DeepSeek | deepseek-v3.2, deepseek-r1 |
-| Google | gemini-2.5-pro, gemini-2.5-flash, gemini-3-flash |
+| **OpenAI** | gpt-4o, gpt-5.2, gpt-5.2-instant |
+| **Anthropic** | claude-opus-4.6, claude-sonnet-4.5, claude-haiku-4.5 |
+| **DeepSeek** | deepseek-v3.2, deepseek-r1 |
+| **Google** | gemini-2.5-pro, gemini-2.5-flash, gemini-3-flash |
 
-## Example Prompts
+## Try It
 
-- "What is the current drift score for GPT-4o?"
-- "Run ABIS daily check"
-- "Has Claude Sonnet drifted in the last 7 days?"
-- "Investigate the drift alert on gpt-4o"
-- "Generate an EU AI Act compliance report"
-- "Which model is most stable right now?"
-- "Have any models had silent version updates this week?"
-- "Show me the cost vs drift matrix for the last 30 days"
-- "Give me an investor brief on ABIS findings"
+```
+"What is the current drift score for GPT-4o?"
+"Run ABIS daily check"
+"Has Claude Sonnet drifted in the last 7 days?"
+"Generate an EU AI Act compliance report"
+"Which model is most stable right now?"
+"Have any models had silent version updates this week?"
+"Show me the cost vs drift matrix"
+```
 
-## Self-Hosted / Local Setup
+## Self-Hosted Setup
 
 ```bash
 git clone https://github.com/cijlabs/abis-mcp
@@ -142,7 +181,8 @@ cp .env.example .env
 node index.js
 ```
 
-Add to Claude Code settings:
+Then add to Claude Code:
+
 ```json
 {
   "mcpServers": {
@@ -157,8 +197,36 @@ Add to Claude Code settings:
 }
 ```
 
+## Architecture
+
+```
+abis-mcp/
+├── index.js          # MCP server — SSE + stdio dual transport
+├── config.js         # Environment config
+├── db.js             # MongoDB persistence
+├── api.js            # Railway API proxy with circuit breaker
+├── tools/            # 37 tool implementations (one per file)
+└── skills/           # /abis-ops and /abis-alerts
+```
+
+- **Dual transport**: SSE (HTTP for cloud) + stdio (Claude Desktop/Code)
+- **Rate limiting**: 60 req/min global; per-tier limits (free=30, pro=120, admin=300)
+- **Backend**: Proxies to ABIS FastAPI on Railway
+- **Persistence**: MongoDB Atlas (sessions, scores, conversations, benchmarks)
+
+## Contributing
+
+Contributions welcome! Please open an issue first to discuss what you'd like to change.
+
+```bash
+npm run dev    # Start with --watch on port 3100
+```
+
+## License
+
+MIT — see [LICENSE](LICENSE) for details.
+
 ## About
 
-**CIJ Labs Ltd** | Company No. 16984759 | London
-Patent: **GB2521226.7**
-Website: [abis.cijlabs.com](https://abis.cijlabs.com)
+**[CIJ Labs Ltd](https://cijlabs.com)** · Company No. 16984759 · London
+Patent: **GB2521226.7** · [abis.cijlabs.com](https://abis.cijlabs.com)

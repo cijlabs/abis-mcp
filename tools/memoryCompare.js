@@ -12,7 +12,7 @@ export default {
   },
 
   async execute(args) {
-    const days = args.days || 7;
+    const days = Math.min(parseInt(args.days) || 7, 365);
     const data = await apiGet(`/memory/compare?days=${days}`);
 
     if (!data) {

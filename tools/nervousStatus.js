@@ -13,10 +13,10 @@ export default {
     const data = await apiGet('/nervous-system/status');
 
     if (!data) {
-      return { content: [{ type: 'text', text: 'ABIS: Could not fetch nervous system status — API offline or endpoint not available.' }] };
+      return { content: [{ type: 'text', text: 'ABIS: Could not fetch event bus status — API offline or endpoint not available.' }] };
     }
 
-    const lines = ['ABIS Nervous System Status', '━━━━━━━━━━━━━━━━━━━━━━━━━━'];
+    const lines = ['ABIS Event Bus Status', '━━━━━━━━━━━━━━━━━━━━━━━━━━'];
 
     // Event bus state
     const active = data.active != null ? (data.active ? '✅ ACTIVE' : '❌ INACTIVE') : '❓ UNKNOWN';

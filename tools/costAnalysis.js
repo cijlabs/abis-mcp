@@ -52,7 +52,8 @@ export default {
 
       return { content: [{ type: 'text', text: lines.join('\n') }] };
     } catch (err) {
-      return { content: [{ type: 'text', text: `ABIS: Cost analysis query failed: ${err.message}` }] };
+      console.error('[ABIS] Cost analysis query failed:', err.message);
+      return { content: [{ type: 'text', text: 'ABIS: Cost analysis query failed. Try again later.' }] };
     }
   }
 };

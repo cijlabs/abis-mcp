@@ -16,7 +16,7 @@ export default {
   async execute(args) {
     const model = encodeURIComponent(args.model);
     const score = encodeURIComponent(args.score || 'drift_score');
-    const days = args.days || 7;
+    const days = Math.min(parseInt(args.days) || 7, 365);
     const data = await apiGet(`/memory/trend/${model}?score=${score}&days=${days}`);
 
     if (!data) {
