@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://abis.cijlabs.com/abis-logo.png" alt="ABIS Logo" width="120" />
+  <img src="https://cijlabs.com/abis-logo.png" alt="ABIS Logo" width="120" />
 </p>
 
 <h1 align="center">ABIS MCP Server</h1>
@@ -13,11 +13,11 @@
   <a href="https://www.npmjs.com/package/abis-mcp"><img src="https://img.shields.io/npm/v/abis-mcp?style=flat-square&color=red" alt="npm version" /></a>
   <a href="https://github.com/cijlabs/abis-mcp/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License" /></a>
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-%3E%3D18-green?style=flat-square" alt="Node.js" /></a>
-  <a href="https://abis.cijlabs.com"><img src="https://img.shields.io/badge/docs-abis.cijlabs.com-purple?style=flat-square" alt="Documentation" /></a>
+  <a href="https://cijlabs.com"><img src="https://img.shields.io/badge/docs-cijlabs.com-purple?style=flat-square" alt="Documentation" /></a>
 </p>
 
 <p align="center">
-  37 tools · 11 models · 3 tiers · Real-time drift detection · Patent-backed
+  27 tools · 11 models · Free / Pro / Business · Real-time drift detection · Patent-backed
 </p>
 
 ---
@@ -127,7 +127,7 @@ Add to your `.mcp.json`:
 | `abis_cost_vs_drift` | 30-day cost vs drift matrix |
 | `abis_run_benchmark` | Single or full benchmark run |
 
-### Admin Tier (+10 tools)
+### Operator tools (internal only — not available on any customer plan)
 
 | Tool | Description |
 |------|-------------|
@@ -229,4 +229,4 @@ MIT — see [LICENSE](LICENSE) for details.
 ## About
 
 **[CIJ Labs Ltd](https://cijlabs.com)** · Company No. 16984759 · London
-Patent: **GB2521226.7** · [abis.cijlabs.com](https://abis.cijlabs.com)
+Patent: **GB2521226.7** · [cijlabs.com](https://cijlabs.com)

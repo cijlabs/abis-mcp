@@ -1,3 +1,4 @@
+import { tierFromPlan, selectTools, isToolAllowed, rateLimitFor, deniedMessage } from './tiers.js';
 import 'dotenv/config';
 import { v4 as uuidv4 } from 'uuid';
 import { createServer as createHttpServer } from 'http';
@@ -111,9 +112,10 @@ const ALL_TOOLS = [
 
 // ─── Tier definitions ─────────────────────────────────────────────────────
 //
-//  FREE  (15 tools) — no API key required
-//  PRO   (27 tools) — MCP_PRO_KEY env var
-//  ADMIN (37 tools) — ABIS_ADMIN_KEY env var
+//  FREE     — no API key required
+//  PRO      — MCP_PRO_KEY env var or a pro plan key
+//  BUSINESS — business/enterprise plan key: the PRO toolset at a higher rate limit
+//  ADMIN    — operator ABIS_ADMIN_KEY env var or local stdio only (never a customer plan)
 //
 // Tool names in the FREE set are also included in PRO; PRO names are also
 // included in ADMIN. Tiers are additive.
@@ -195,7 +197,7 @@ async function resolveTier(token) {
     if (col) {
       const doc = await col.findOne({ key: token, active: true });
       if (doc) {
-        const tier = (doc.plan === 'business' || doc.plan === 'enterprise') ? 'admin' : 'pro';
+        const tier = tierFromPlan(doc.plan); // business/enterprise -> 'business' (never 'admin')
         _keyCache.set(token, { tier, exp: Date.now() + _TTL_HIT });
         return tier;
       }
@@ -217,9 +219,7 @@ function extractToken(req) {
 }
 
 function getToolsForTier(tier) {
-  if (tier === 'admin') return ALL_TOOLS;
-  if (tier === 'pro')   return ALL_TOOLS.filter(t => PRO_TOOL_NAMES.has(t.name));
-  return ALL_TOOLS.filter(t => FREE_TOOL_NAMES.has(t.name));
+  return selectTools(ALL_TOOLS, tier, { freeNames: FREE_TOOL_NAMES, proNames: PRO_TOOL_NAMES, adminOnly: ADMIN_ONLY_TOOLS });
 }
 
 // ─── Rate limiting — per-IP + per-key ──────────────────────────────────────
@@ -228,6 +228,7 @@ const _RL_WINDOW = 60_000;
 const _RL_MAX_IP = 60;       // 60 req/min per IP
 const _RL_MAX_FREE = 30;     // 30 req/min for free tier keys
 const _RL_MAX_PRO = 120;     // 120 req/min for pro tier keys
+const _RL_MAX_BUSINESS = 200; // 200 req/min for business keys
 const _RL_MAX_ADMIN = 300;   // 300 req/min for admin keys
 
 function _getClientIP(req) {
@@ -260,7 +261,7 @@ function checkRateLimits(req, tier) {
   // Per-IP check (always applied)
   if (!_checkRL(`ip:${ip}`, _RL_MAX_IP)) return false;
   // Per-tier check (stricter for free users)
-  const tierLimit = tier === 'admin' ? _RL_MAX_ADMIN : tier === 'pro' ? _RL_MAX_PRO : _RL_MAX_FREE;
+  const tierLimit = rateLimitFor(tier, { free: _RL_MAX_FREE, pro: _RL_MAX_PRO, business: _RL_MAX_BUSINESS, admin: _RL_MAX_ADMIN });
   const token = extractToken(req);
   const tierKey = token ? `key:${token.substring(0, 8)}` : `ip:${ip}:tier`;
   return _checkRL(tierKey, tierLimit);
@@ -274,7 +275,7 @@ setInterval(() => { const now = Date.now(); for (const [k,v] of _rlStore) { if (
 // for a lower-tier session, it gets blocked here.
 
 const ADMIN_ONLY_TOOLS = new Set([
-  'abis_cost_analysis',
+  'abis_api_cost_analysis', // was misspelt abis_cost_analysis (no such tool), so the gate never matched
   'abis_ears_correlations',
   'abis_sdk_sessions',
   'abis_notification_history',
@@ -302,13 +303,7 @@ const PRO_ONLY_TOOLS = new Set([
 ]);
 
 function checkToolAuthorization(toolName, tier) {
-  if (ADMIN_ONLY_TOOLS.has(toolName)) {
-    return tier === 'admin';
-  }
-  if (PRO_ONLY_TOOLS.has(toolName)) {
-    return tier === 'admin' || tier === 'pro';
-  }
-  return true; // FREE tools are available to all tiers
+  return isToolAllowed(toolName, tier, { adminOnly: ADMIN_ONLY_TOOLS, proOnly: PRO_ONLY_TOOLS });
 }
 
 // ─── Input validation ──────────────────────────────────────────────────────
@@ -408,7 +403,7 @@ function createMCPServer(tierTools, tier) {
     if (!checkToolAuthorization(name, tier)) {
       console.warn(`[ABIS MCP] AUTH BLOCKED: ${name} called by ${tier} tier`);
       return {
-        content: [{ type: 'text', text: `Access denied: '${name}' requires ${ADMIN_ONLY_TOOLS.has(name) ? 'admin' : 'pro'} tier. Upgrade at abis.cijlabs.com/pricing` }],
+        content: [{ type: 'text', text: deniedMessage(name, ADMIN_ONLY_TOOLS) }],
         isError: true,
       };
     }
@@ -416,7 +411,7 @@ function createMCPServer(tierTools, tier) {
     const tool = tierRegistry[name];
     if (!tool) {
       return {
-        content: [{ type: 'text', text: `Tool '${name}' is not available on your current tier. Upgrade at abis.cijlabs.com/pricing` }],
+        content: [{ type: 'text', text: `Tool '${name}' is not available on your current tier. Upgrade at https://cijlabs.com/pricing` }],
         isError: true,
       };
     }
@@ -458,7 +453,7 @@ async function startSSE() {
 
   const httpServer = createHttpServer(async (req, res) => {
     // CORS
-    const _allowedOrigins = (process.env.MCP_ALLOWED_ORIGINS || 'https://abis.cijlabs.com').split(',').map(s => s.trim());
+    const _allowedOrigins = (process.env.MCP_ALLOWED_ORIGINS || 'https://cijlabs.com,https://www.cijlabs.com').split(',').map(s => s.trim());
     const _origin = req.headers['origin'] || '';
     const _ao = _allowedOrigins.includes(_origin) ? _origin : _allowedOrigins[0];
     res.setHeader('Access-Control-Allow-Origin', _ao);
@@ -489,7 +484,7 @@ async function startSSE() {
         status: 'ok',
         server: 'abis-mcp',
         version: '3.5.0',
-        tiers: { free: 15, pro: 27, admin: 37 },
+        tiers: { free: getToolsForTier('free').length, pro: getToolsForTier('pro').length, business: getToolsForTier('business').length },
         transport: 'sse',
       }));
       return;
@@ -576,7 +571,7 @@ async function startSSE() {
   });
 
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`ABIS MCP server v3.4.0 running on http://0.0.0.0:${PORT}/sse — 3 tiers (15/27/37 tools)`);
+    console.log(`ABIS MCP server v3.4.0 running on http://0.0.0.0:${PORT}/sse — customer tiers free/pro/business (${getToolsForTier('free').length}/${getToolsForTier('pro').length}/${getToolsForTier('business').length} tools)`);
   });
 }
 
@@ -589,7 +584,7 @@ async function startStdio() {
   const server = createMCPServer(ALL_TOOLS, 'admin');
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('ABIS MCP server v3.4.0 running on stdio — 37 tools (admin tier)');
+  console.error('ABIS MCP server v3.5.0 running on stdio — all tools (local operator / admin tier)');
 }
 
 // ─── Entrypoint ────────────────────────────────────────────────────────────

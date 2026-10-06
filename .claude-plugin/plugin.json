@@ -1,11 +1,11 @@
 {
   "name": "abis-drift-monitor",
   "display_name": "ABIS — AI Behavioral Drift Monitor",
-  "description": "Real-time behavioral drift detection for 11 LLMs. 37 tools across 3 tiers (Free/Pro/Admin): live drift scores, 9-score scorecards, silent version change detection, autonomous correction, immune threat assessment, and EU AI Act compliance reporting. Backed by Patent GB2521226.7.",
+  "description": "Real-time behavioral drift detection for 11 LLMs. Up to 27 tools across Free/Pro/Business plans: live drift scores, 9-score scorecards, silent version change detection, autonomous correction, immune threat assessment, and EU AI Act compliance reporting. Backed by Patent GB2521226.7.",
   "version": "3.5.0",
   "claude_plugin_version": "1.0",
   "author": "CIJ Labs",
-  "homepage": "https://abis.cijlabs.com",
+  "homepage": "https://cijlabs.com",
   "repository": "https://github.com/cijlabs/abis-mcp",
   "license": "MIT",
   "categories": ["ai", "monitoring", "security", "compliance"],
@@ -24,7 +24,7 @@
     "skills/abis-alerts.md"
   ],
   "requires_auth": false,
-  "getting_started": "Once installed, ask: 'What is the current drift score for GPT-4o?' or 'Run ABIS daily check'. No API key required for the Free tier (15 tools). Upgrade to Pro (27 tools) or Admin (37 tools) at abis.cijlabs.com/pricing.",
+  "getting_started": "Once installed, ask: 'What is the current drift score for GPT-4o?' or 'Run ABIS daily check'. No API key required for the Free tier (15 tools). Upgrade to Pro or Business for the full customer toolset at https://cijlabs.com/pricing.",
   "tiers": {
     "free": { "tools": 15, "key_required": false },
     "pro": { "tools": 27, "key_required": true, "key_env": "MCP_PRO_KEY" },

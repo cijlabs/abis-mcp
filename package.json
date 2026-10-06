@@ -1,11 +1,12 @@
 {
   "name": "abis-mcp",
   "version": "3.1.0",
-  "description": "ABIS MCP Server — AI behavioral drift monitoring for Claude Code. 37 tools, 11 models, real-time drift detection.",
+  "description": "ABIS MCP Server — AI behavioral drift monitoring for Claude Code. up to 27 tools on Free/Pro/Business plans, 11 models, real-time drift detection.",
   "main": "index.js",
   "type": "module",
   "mcpName": "io.github.cijlabs/abis-mcp",
   "scripts": {
+    "test": "node --test test/tiers.test.js",
     "start": "node index.js",
     "start:stdio": "node index.js --stdio",
     "dev": "node --watch index.js"
@@ -24,7 +25,7 @@
     "abis",
     "cijlabs"
   ],
-  "homepage": "https://abis.cijlabs.com",
+  "homepage": "https://cijlabs.com",
   "repository": {
     "type": "git",
     "url": "https://github.com/cijlabs/abis-mcp.git"
