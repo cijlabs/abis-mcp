@@ -2,7 +2,7 @@ import { apiPost } from '../api.js';
 
 export default {
   name: 'abis_immune_assess',
-  description: 'Run a real-time immune threat assessment against a scorecard. Returns threat classification (CLEAN/ORGANIC_DRIFT/PROMPT_INJECTION/DATA_POISONING/COORDINATED_ATTACK).',
+  description: 'Run an on-demand immune threat assessment against a scorecard. Returns threat classification (CLEAN/ORGANIC_DRIFT/PROMPT_INJECTION/DATA_POISONING/COORDINATED_ATTACK).',
   inputSchema: {
     type: 'object',
     properties: {

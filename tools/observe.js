@@ -1,5 +1,5 @@
 import { v4 as uuid } from 'uuid';
-import { apiPost, apiGet } from '../api.js';
+import { apiPost, apiPostResult, apiGet } from '../api.js';
 import { insertDoc, getCollection } from '../db.js';
 import { AMBIENT_DRIFT_THRESHOLD } from '../config.js';
 
@@ -90,19 +90,22 @@ export default {
     const turnId = uuid();
 
     // 1. Score the response through Railway
-    const result = await apiPost('/benchmark/single', {
+    const r = await apiPostResult('/benchmark/single', {
       model,
       prompt: responseText.substring(0, 5000),
     });
 
-    if (!result) {
+    if (!r.ok || !r.data) {
       return {
         content: [{
           type: 'text',
-          text: '[ABIS OBSERVE] Scoring unavailable — Railway API offline.',
+          text: r.status === 429
+            ? '[ABIS OBSERVE] Scoring is rate-limited right now (shared limit) — try again in a minute.'
+            : '[ABIS OBSERVE] Scoring unavailable — Railway API offline.',
         }],
       };
     }
+    const result = r.data;
 
     const drift = result.drift_score || 0;
     const scorecard = result.scorecard || {};

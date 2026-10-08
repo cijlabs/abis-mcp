@@ -7,8 +7,15 @@
 // recalibration, pipeline stats, notification config, stress benchmarks, ...).
 // Admin is now reachable only with the operator ABIS_ADMIN_KEY or local stdio.
 
+// Fail closed (2026-10-08): only a known paid plan gets a paid tier. Anything else on an
+// active row (missing, 'free', 'cancelled', a typo) used to fall through to 'pro', so a
+// key downgraded by changing its plan kept the Pro toolset. The backend only writes
+// 'pro' / 'business' rows to mcp_api_keys.
 export function tierFromPlan(plan) {
-  return plan === 'business' || plan === 'enterprise' ? 'business' : 'pro';
+  const p = typeof plan === 'string' ? plan.trim().toLowerCase() : '';
+  if (p === 'business' || p === 'enterprise') return 'business';
+  if (p === 'pro') return 'pro';
+  return 'free';
 }
 
 export function selectTools(allTools, tier, { freeNames, proNames, adminOnly }) {

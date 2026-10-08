@@ -4,7 +4,7 @@ import { insertDoc } from '../db.js';
 
 export default {
   name: 'abis_ambient_status',
-  description: 'Get the current ABIS ambient status — fetches live drift scores for all 8 monitored models. Call at session start to pre-load behavioral context. Returns formatted drift snapshot.',
+  description: 'Get the current ABIS ambient status — fetches the latest drift scores for the 10 benchmarked models. Call at session start to pre-load behavioral context. Returns formatted drift snapshot.',
   inputSchema: { type: 'object', properties: {}, required: [] },
 
   async execute(_args, sessionCtx) {

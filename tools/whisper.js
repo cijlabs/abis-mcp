@@ -4,7 +4,7 @@ import { AMBIENT_DRIFT_THRESHOLD, AMBIENT_CRITICAL_THRESHOLD } from '../config.j
 
 export default {
   name: 'abis_whisper',
-  description: 'Get the current ABIS whisper — a contextual status line injected into Claude\'s system prompt based on live drift state. Whisper levels: clear (all stable), monitor (some drift), alert (threshold exceeded), critical (>0.90). Call this at conversation start or periodically to stay drift-aware.',
+  description: 'Get the current ABIS whisper — a contextual status line injected into Claude\'s system prompt based on latest drift state. Whisper levels: clear (all stable), monitor (some drift), alert (threshold exceeded), critical (>0.90). Call this at conversation start or periodically to stay drift-aware.',
   inputSchema: {
     type: 'object',
     properties: {

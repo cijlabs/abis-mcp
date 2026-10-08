@@ -1,8 +1,9 @@
-import { tierFromPlan, selectTools, isToolAllowed, rateLimitFor, deniedMessage } from './tiers.js';
+import { selectTools, isToolAllowed, deniedMessage } from './tiers.js';
+import { createTierResolver, refreshSessionTier } from './auth.js';
+import { createRateLimiter, requestBuckets } from './ratelimit.js';
 import 'dotenv/config';
 import { v4 as uuidv4 } from 'uuid';
 import { createServer as createHttpServer } from 'http';
-import { timingSafeEqual } from 'crypto';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
@@ -88,7 +89,7 @@ const ALL_TOOLS = [
   conversationHistory, // 17. Query scored conversation logs
   memoryProfile,       // 18. Full behavioral memory profile
   memoryTrend,         // 19. Score time-series trend
-  immuneAssess,        // 20. Real-time threat assessment
+  immuneAssess,        // 20. On-demand threat assessment
   immuneScan,          // 21. Historical immune scan
   simulate,            // 22. Layer 3 correction simulator
   correctorHistory,    // 23. Correction strategy effectiveness
@@ -160,56 +161,31 @@ const PRO_TOOL_NAMES = new Set([
 const ADMIN_KEY = process.env.ABIS_ADMIN_KEY || '';
 const PRO_KEY   = process.env.MCP_PRO_KEY || '';
 
-// In-memory key cache: token → { tier, exp }
-const _keyCache = new Map();
-const _TTL_HIT  = 300_000; // 5 min for pro/admin hits
-const _TTL_FREE =  60_000; // 1 min for free (allows quick key activation)
-
-// Purge expired cache entries every 60 seconds
-setInterval(() => {
-  const now = Date.now();
-  for (const [k, v] of _keyCache) {
-    if (now > v.exp) _keyCache.delete(k);
-  }
-}, 60_000);
-
-function safeCompare(a, b) {
-  if (!a || !b || a.length !== b.length) return false;
-  try {
-    return timingSafeEqual(Buffer.from(a), Buffer.from(b));
-  } catch { return false; }
+// Only an ACTIVE row counts; throws when the DB is unreachable (the resolver then
+// keeps the last DB-confirmed tier for a bounded grace window, see auth.js).
+async function lookupActiveKey(token) {
+  const col = await getCollection('mcp_api_keys');
+  if (!col) throw new Error('mcp_api_keys unavailable (no DB connection)');
+  return col.findOne({ key: token, active: true }, { projection: { plan: 1 } });
 }
 
-async function resolveTier(token) {
-  if (!token) return 'free';
+// Paid keys are re-checked against the DB at least every 30s (was a 5 min cache), and
+// every POST /messages re-resolves its session's key, so a deactivated or downgraded
+// key stops working within ~30s even on an open SSE session.
+const tierResolver = createTierResolver({
+  lookup: lookupActiveKey,
+  adminKey: ADMIN_KEY,
+  proKey: PRO_KEY,
+  ttlHitMs: 30_000,
+  ttlFreeMs: 60_000,
+  graceMs: 300_000,
+  onError: (err) => console.error('[ABIS MCP] resolveTier DB error:', err.message),
+  // Visible, so a mis-provisioned paying customer is noticed (the key is never logged).
+  onPlanRejected: (plan) => console.warn(`[ABIS MCP] active mcp_api_keys row has non-paid plan ${JSON.stringify(plan)} — resolved to free`),
+});
+const resolveTier = tierResolver.resolve;
 
-  // Env-var fast paths — timing-safe comparison
-  if (ADMIN_KEY && safeCompare(token, ADMIN_KEY)) return 'admin';
-  if (PRO_KEY   && safeCompare(token, PRO_KEY))   return 'pro';
-
-  // Check cache
-  const cached = _keyCache.get(token);
-  if (cached && Date.now() < cached.exp) return cached.tier;
-
-  // MongoDB lookup
-  try {
-    const col = await getCollection('mcp_api_keys');
-    if (col) {
-      const doc = await col.findOne({ key: token, active: true });
-      if (doc) {
-        const tier = tierFromPlan(doc.plan); // business/enterprise -> 'business' (never 'admin')
-        _keyCache.set(token, { tier, exp: Date.now() + _TTL_HIT });
-        return tier;
-      }
-    }
-  } catch (err) {
-    console.error('[ABIS MCP] resolveTier DB error:', err.message);
-  }
-
-  // Not found or DB unavailable → free (short TTL so activation propagates fast)
-  _keyCache.set(token, { tier: 'free', exp: Date.now() + _TTL_FREE });
-  return 'free';
-}
+setInterval(() => tierResolver.purge(), 60_000).unref();
 
 // Extract Bearer token from Authorization header only
 function extractToken(req) {
@@ -218,18 +194,26 @@ function extractToken(req) {
   return '';
 }
 
+const _toolsByTier = new Map();
 function getToolsForTier(tier) {
-  return selectTools(ALL_TOOLS, tier, { freeNames: FREE_TOOL_NAMES, proNames: PRO_TOOL_NAMES, adminOnly: ADMIN_ONLY_TOOLS });
+  if (!_toolsByTier.has(tier)) {
+    _toolsByTier.set(tier, selectTools(ALL_TOOLS, tier, { freeNames: FREE_TOOL_NAMES, proNames: PRO_TOOL_NAMES, adminOnly: ADMIN_ONLY_TOOLS }));
+  }
+  return _toolsByTier.get(tier);
 }
 
-// ─── Rate limiting — per-IP + per-key ──────────────────────────────────────
-const _rlStore = new Map();
-const _RL_WINDOW = 60_000;
-const _RL_MAX_IP = 60;       // 60 req/min per IP
-const _RL_MAX_FREE = 30;     // 30 req/min for free tier keys
-const _RL_MAX_PRO = 120;     // 120 req/min for pro tier keys
-const _RL_MAX_BUSINESS = 200; // 200 req/min for business keys
-const _RL_MAX_ADMIN = 300;   // 300 req/min for admin keys
+// ─── Rate limiting — per-key for paid tiers, per-IP for free ───────────────
+// Order (see ratelimit.js): a request carrying a recognised paid key is limited
+// only by that key's bucket, so Pro 120/min and Business 200/min are reachable
+// from one IP. Anonymous/free traffic gets the per-IP cap AND the free-tier cap.
+const _RL_LIMITS = {
+  ip: 60,         // 60 req/min per IP — every unauthenticated / free request
+  free: 30,       // 30 MCP messages/min per IP on the free tier
+  pro: 120,       // 120 req/min per pro key
+  business: 200,  // 200 req/min per business key
+  admin: 300,     // 300 req/min per admin key
+};
+const rateLimiter = createRateLimiter({ windowMs: 60_000 });
 
 function _getClientIP(req) {
   // Only trust XFF if behind Railway's proxy (RAILWAY_ENVIRONMENT set)
@@ -242,32 +226,19 @@ function _getClientIP(req) {
   return req.socket?.remoteAddress || 'unknown';
 }
 
-function _checkRL(key, limit) {
-  const now = Date.now();
-  // Cap store size to prevent memory exhaustion via spoofed IPs
-  if (_rlStore.size > 10_000) {
-    for (const [k, v] of _rlStore) { if (now > v.t) _rlStore.delete(k); }
-    if (_rlStore.size > 10_000) _rlStore.clear();
+// bucketKey is what rateLimiter.exceeded() returned, so the message names the limit hit.
+function sendRateLimited(res, bucketKey, tier) {
+  let msg = 'Rate limit exceeded. Try again later.';
+  if (bucketKey.startsWith('key:')) {
+    msg = `Rate limit exceeded for your plan (${tier}: ${_RL_LIMITS[tier]} requests/min per key). Try again shortly.`;
+  } else if (bucketKey.endsWith(':free')) {
+    msg = `Rate limit exceeded (free tier: ${_RL_LIMITS.free} requests/min per IP). Upgrade for higher limits at https://cijlabs.com/pricing`;
   }
-  const e = _rlStore.get(key) || { n: 0, t: now + _RL_WINDOW };
-  if (now > e.t) { e.n = 0; e.t = now + _RL_WINDOW; }
-  e.n++;
-  _rlStore.set(key, e);
-  return e.n <= limit;
+  res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' });
+  res.end(JSON.stringify({ error: msg }));
 }
 
-function checkRateLimits(req, tier) {
-  const ip = _getClientIP(req);
-  // Per-IP check (always applied)
-  if (!_checkRL(`ip:${ip}`, _RL_MAX_IP)) return false;
-  // Per-tier check (stricter for free users)
-  const tierLimit = rateLimitFor(tier, { free: _RL_MAX_FREE, pro: _RL_MAX_PRO, business: _RL_MAX_BUSINESS, admin: _RL_MAX_ADMIN });
-  const token = extractToken(req);
-  const tierKey = token ? `key:${token.substring(0, 8)}` : `ip:${ip}:tier`;
-  return _checkRL(tierKey, tierLimit);
-}
-
-setInterval(() => { const now = Date.now(); for (const [k,v] of _rlStore) { if (now > v.t) _rlStore.delete(k); } }, 300_000);
+setInterval(() => rateLimiter.purge(), 300_000).unref();
 
 // ─── Per-tool authorization gate (runtime enforcement) ─────────────────────
 // Even though tools are filtered at SSE connection time, this provides
@@ -307,23 +278,31 @@ function checkToolAuthorization(toolName, tier) {
 }
 
 // ─── Input validation ──────────────────────────────────────────────────────
+// The 10 models on the live leaderboard (benchmarked daily) — verified 2026-10-08
+// against /api/public/leaderboard (total_models: 10). gpt-5.4 was missing (so it was
+// refused); gpt-5.2-instant / gemini-2.5-pro are not benchmarked (backend 404s).
 const ALLOWED_MODELS = new Set([
-  'gpt-4o', 'claude-opus-4.6', 'claude-sonnet-4.5', 'claude-haiku-4.5',
-  'deepseek-v3.2', 'deepseek-r1', 'gpt-5.2', 'gpt-5.2-instant',
-  'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-3-flash',
+  'gpt-4o', 'gpt-5.2', 'gpt-5.4',
+  'claude-opus-4.6', 'claude-sonnet-4.5', 'claude-haiku-4.5',
+  'deepseek-v3.2', 'deepseek-r1',
+  'gemini-2.5-flash', 'gemini-3-flash',
 ]);
 
 function validateArgs(toolName, args) {
   const errors = [];
 
-  // Model name validation — applied to any tool that accepts a 'model' param
-  if (args.model !== undefined && args.model !== null && args.model !== '') {
-    if (typeof args.model !== 'string') {
-      errors.push('model must be a string');
-    } else if (args.model.length > 50) {
-      errors.push('model name too long (max 50 chars)');
-    } else if (!ALLOWED_MODELS.has(args.model)) {
-      errors.push(`Unknown model '${args.model}'. Valid: ${[...ALLOWED_MODELS].join(', ')}`);
+  // Model name validation — any tool param that names a model. model_hint
+  // (abis_score_message) is sent to the backend as the model to benchmark, so it
+  // must be held to the same allowlist.
+  for (const field of ['model', 'model_hint']) {
+    const v = args[field];
+    if (v === undefined || v === null || v === '') continue;
+    if (typeof v !== 'string') {
+      errors.push(`${field} must be a string`);
+    } else if (v.length > 50) {
+      errors.push(`${field} too long (max 50 chars)`);
+    } else if (!ALLOWED_MODELS.has(v)) {
+      errors.push(`Unknown model '${v}'. Valid: ${[...ALLOWED_MODELS].join(', ')}`);
     }
   }
 
@@ -379,17 +358,16 @@ function validateArgs(toolName, args) {
 }
 
 // ─── MCP server factory (tier-scoped with runtime auth) ───────────────────
-function createMCPServer(tierTools, tier) {
-  const tierRegistry = {};
-  tierTools.forEach(tool => { tierRegistry[tool.name] = tool; });
-
+// getTier() is read on EVERY request, so a session follows its key's current tier
+// (an SSE session's tier is re-resolved on each POST /messages).
+function createMCPServer(getTier) {
   const server = new Server(
     { name: 'abis-mcp', version: '3.5.0' },
-    { capabilities: { tools: {} } }
+    { capabilities: { tools: { listChanged: true } } }
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: tierTools.map(tool => ({
+    tools: getToolsForTier(getTier()).map(tool => ({
       name: tool.name,
       description: tool.description,
       inputSchema: tool.inputSchema,
@@ -398,6 +376,7 @@ function createMCPServer(tierTools, tier) {
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
+    const tier = getTier();
 
     // ── Runtime auth gate (defense-in-depth) ──
     if (!checkToolAuthorization(name, tier)) {
@@ -408,7 +387,7 @@ function createMCPServer(tierTools, tier) {
       };
     }
 
-    const tool = tierRegistry[name];
+    const tool = getToolsForTier(tier).find(t => t.name === name);
     if (!tool) {
       return {
         content: [{ type: 'text', text: `Tool '${name}' is not available on your current tier. Upgrade at https://cijlabs.com/pricing` }],
@@ -440,8 +419,25 @@ function createMCPServer(tierTools, tier) {
   return server;
 }
 
-// ─── Active sessions: sessionId → { transport, tier, ip } ────────────────
+// ─── Active sessions: sessionId → { id, transport, server, token, tier, ip } ──
 const activeSessions = new Map();
+
+// Re-resolve a live session's key (cached ≤30s, see tierResolver) and record the
+// current tier on the session; on a change, tell the client to re-list its tools.
+// Any failure fails closed to free.
+async function refreshLiveSession(session, resolve = resolveTier) {
+  const notify = (from, to) => {
+    console.warn(`[ABIS MCP] Session ${session.id} tier changed: ${from} -> ${to}`);
+    session.server?.sendToolListChanged().catch(() => {});
+  };
+  try {
+    return await refreshSessionTier(session, resolve, notify);
+  } catch (err) {
+    console.error('[ABIS MCP] tier refresh failed, failing closed to free:', err.message);
+    if (session.tier !== 'free') { const from = session.tier; session.tier = 'free'; notify(from, 'free'); }
+    return 'free';
+  }
+}
 const _MAX_SESSIONS = 200;
 const _MAX_SESSIONS_PER_IP = 5;
 
@@ -451,7 +447,10 @@ async function startSSE() {
 
   const PORT = parseInt(process.env.PORT || '3100', 10);
 
-  const httpServer = createHttpServer(async (req, res) => {
+  // Every rejection is caught in createHttpServer below: an uncaught throw in this async
+  // handler is an unhandled rejection, which exits the process (and Railway gives up
+  // after 3 restarts). A raw `GET // HTTP/1.1` used to do exactly that via new URL().
+  const handleHttp = async (req, res) => {
     // CORS
     const _allowedOrigins = (process.env.MCP_ALLOWED_ORIGINS || 'https://cijlabs.com,https://www.cijlabs.com').split(',').map(s => s.trim());
     const _origin = req.headers['origin'] || '';
@@ -467,15 +466,25 @@ async function startSSE() {
       return;
     }
 
-    // Rate limiting — per-IP baseline (tier-aware limits applied at SSE connection)
-    const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || 'unknown';
-    if (!_checkRL(`ip:${ip}`, _RL_MAX_IP)) {
-      res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' });
-      res.end(JSON.stringify({ error: 'Rate limit exceeded. Try again later.' }));
+    let url;
+    try {
+      url = new URL(req.url, `http://localhost:${PORT}`);
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Bad request URL' }));
       return;
     }
+    // One IP derivation for every limit. The old baseline used the LEFTMOST
+    // X-Forwarded-For entry, which the client controls, so the per-IP cap was bypassable.
+    const clientIP = _getClientIP(req);
 
-    const url = new URL(req.url, `http://localhost:${PORT}`);
+    // /sse and /messages apply their own tier-aware limits below (paid keys are not
+    // held to the per-IP cap). Everything else is per-IP only.
+    const isMcpRoute = (req.method === 'GET' && url.pathname === '/sse') || (req.method === 'POST' && url.pathname === '/messages');
+    if (!isMcpRoute && !rateLimiter.hit(`ip:${clientIP}`, _RL_LIMITS.ip)) {
+      sendRateLimited(res, `ip:${clientIP}`, 'free');
+      return;
+    }
 
     // Health check
     if (req.method === 'GET' && url.pathname === '/health') {
@@ -492,8 +501,6 @@ async function startSSE() {
 
     // SSE endpoint — client connects here, tier resolved from token
     if (req.method === 'GET' && url.pathname === '/sse') {
-      const clientIP = _getClientIP(req);
-
       // Connection limits
       if (activeSessions.size >= _MAX_SESSIONS) {
         res.writeHead(503, { 'Content-Type': 'application/json' });
@@ -508,30 +515,48 @@ async function startSSE() {
       }
 
       const token = extractToken(req);
-      const tier = await resolveTier(token);
 
-      // Per-key rate limiting for SSE connections
-      if (!checkRateLimits(req, tier)) {
-        res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': '60' });
-        res.end(JSON.stringify({ error: 'Rate limit exceeded for your tier. Upgrade for higher limits.' }));
+      // A token not already known to be paid pays the per-IP cap BEFORE the DB lookup,
+      // so random tokens cannot be used to hammer Mongo. A cached paid key skips it.
+      const known = tierResolver.peek(token);
+      const ipCounted = !known || known === 'free';
+      if (ipCounted && !rateLimiter.hit(`ip:${clientIP}`, _RL_LIMITS.ip)) {
+        sendRateLimited(res, `ip:${clientIP}`, 'free');
         return;
       }
 
-      const tierTools = getToolsForTier(tier);
-      console.log(`[ABIS MCP] New SSE connection — tier: ${tier} (${tierTools.length} tools)`);
+      // A client that disconnects while the key lookup is pending must not leave a
+      // session behind (the cleanup listener below would never fire), or it would hold
+      // one of the _MAX_SESSIONS / per-IP slots forever.
+      let clientGone = false;
+      res.once('close', () => { clientGone = true; });
+
+      const tier = await resolveTier(token);
+      if (clientGone) return;
+      const buckets = requestBuckets({ tier, token, ip: clientIP }, _RL_LIMITS)
+        .filter(([key]) => !(ipCounted && key === `ip:${clientIP}`)); // IP already counted above
+      const over = rateLimiter.exceeded(buckets);
+      if (over) {
+        sendRateLimited(res, over, tier);
+        return;
+      }
+
+      console.log(`[ABIS MCP] New SSE connection — tier: ${tier} (${getToolsForTier(tier).length} tools)`);
       try {
-        const mcpServer = createMCPServer(tierTools, tier);
         const transport = new SSEServerTransport('/messages', res);
         const sessionId = transport.sessionId;
-        activeSessions.set(sessionId, { transport, tier, ip: clientIP });
+        // The token is kept so each POST /messages can re-resolve the key's CURRENT tier.
+        const session = { id: sessionId, transport, server: null, token, tier, ip: clientIP };
+        session.server = createMCPServer(() => session.tier);
+        activeSessions.set(sessionId, session);
 
         res.on('close', () => {
-          console.log(`[ABIS MCP] SSE closed: ${sessionId} (${tier})`);
+          console.log(`[ABIS MCP] SSE closed: ${sessionId} (${session.tier})`);
           activeSessions.delete(sessionId);
-          mcpServer.close().catch(() => {});
+          session.server.close().catch(() => {});
         });
 
-        await mcpServer.connect(transport);
+        await session.server.connect(transport);
       } catch (err) {
         console.error('[ABIS MCP] SSE error:', err);
         if (!res.headersSent) {
@@ -548,8 +573,22 @@ async function startSSE() {
       const session = activeSessions.get(sessionId);
 
       if (!session) {
+        if (!rateLimiter.hit(`ip:${clientIP}`, _RL_LIMITS.ip)) {
+          sendRateLimited(res, `ip:${clientIP}`, 'free');
+          return;
+        }
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'No active SSE session' }));
+        return;
+      }
+
+      // Re-resolve the session's key on EVERY message, so a deactivated key drops to
+      // free (and a downgraded one to its new tier) without waiting for a disconnect.
+      const tier = await refreshLiveSession(session);
+
+      const over = rateLimiter.exceeded(requestBuckets({ tier, token: session.token, ip: clientIP }, _RL_LIMITS));
+      if (over) {
+        sendRateLimited(res, over, tier);
         return;
       }
 
@@ -568,10 +607,22 @@ async function startSSE() {
     // 404
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Not found', routes: ['/health', '/sse', '/messages'] }));
+  };
+
+  const httpServer = createHttpServer((req, res) => {
+    handleHttp(req, res).catch((err) => {
+      console.error('[ABIS MCP] request handler error:', err);
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Internal server error' }));
+      } else {
+        res.destroy();
+      }
+    }).catch(() => {}); // the error responder itself must never become an unhandled rejection
   });
 
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`ABIS MCP server v3.4.0 running on http://0.0.0.0:${PORT}/sse — customer tiers free/pro/business (${getToolsForTier('free').length}/${getToolsForTier('pro').length}/${getToolsForTier('business').length} tools)`);
+    console.log(`ABIS MCP server v3.5.0 running on http://0.0.0.0:${PORT}/sse — customer tiers free/pro/business (${getToolsForTier('free').length}/${getToolsForTier('pro').length}/${getToolsForTier('business').length} tools)`);
   });
 }
 
@@ -581,17 +632,22 @@ async function startStdio() {
   await connectDB();
 
   // Stdio connections default to admin tier (local use only)
-  const server = createMCPServer(ALL_TOOLS, 'admin');
+  const server = createMCPServer(() => 'admin');
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error('ABIS MCP server v3.5.0 running on stdio — all tools (local operator / admin tier)');
 }
 
 // ─── Entrypoint ────────────────────────────────────────────────────────────
+// Exported for tests, which set ABIS_MCP_NO_AUTOSTART=1 to import without starting a server.
+export { createMCPServer, getToolsForTier, refreshLiveSession, ALLOWED_MODELS };
+
 const mode = process.argv.includes('--stdio') ? 'stdio' : 'sse';
 
-if (mode === 'stdio') {
-  startStdio().catch(err => { console.error('Fatal:', err); process.exit(1); });
-} else {
-  startSSE().catch(err => { console.error('Fatal:', err); process.exit(1); });
+if (process.env.ABIS_MCP_NO_AUTOSTART !== '1') {
+  if (mode === 'stdio') {
+    startStdio().catch(err => { console.error('Fatal:', err); process.exit(1); });
+  } else {
+    startSSE().catch(err => { console.error('Fatal:', err); process.exit(1); });
+  }
 }

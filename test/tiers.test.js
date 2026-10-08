@@ -54,9 +54,19 @@ test('business and enterprise plans map to the business tier, never admin', () =
   }
 });
 
-test('index.js resolves DB keys through tierFromPlan (no hard-coded admin mapping)', () => {
-  assert.match(src, /const tier = tierFromPlan\(doc\.plan\)/);
-  assert.doesNotMatch(src, /\?\s*'admin'\s*:\s*'pro'/);
+test('an active row with an unknown or non-paid plan fails closed to free', () => {
+  for (const plan of ['free', 'cancelled', 'starter', '', 'admin', 'ADMIN', undefined, null, 42]) {
+    assert.equal(tierFromPlan(plan), 'free', `plan ${plan}`);
+  }
+  assert.equal(tierFromPlan(' Pro '), 'pro', 'case/whitespace normalised');
+  assert.equal(tierFromPlan('Business'), 'business');
+});
+
+test('DB keys resolve through tierFromPlan (no hard-coded admin mapping)', () => {
+  const authSrc = readFileSync(new URL('auth.js', root), 'utf8');
+  assert.match(authSrc, /const tier = doc \? tierFromPlan\(doc\.plan\) : 'free'/);
+  assert.match(src, /createTierResolver\(/, 'index.js must resolve keys via auth.js createTierResolver');
+  for (const s of [src, authSrc]) assert.doesNotMatch(s, /\?\s*'admin'\s*:\s*'pro'/);
 });
 
 test('business gets exactly the customer toolset and no admin-only tool', () => {

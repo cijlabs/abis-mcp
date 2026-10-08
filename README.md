@@ -17,17 +17,17 @@
 </p>
 
 <p align="center">
-  27 tools · 11 models · Free / Pro / Business · Real-time drift detection · Patent-backed
+  27 tools · 10 models benchmarked daily · Free / Pro / Business · Patent-backed
 </p>
 
 ---
 
 ## What is ABIS?
 
-**ABIS** (Adaptive Behavioral Intelligence System) monitors LLM behavioral drift in real-time. It detects when AI models silently change — shifts in tone, reasoning depth, safety calibration, or capability — even when providers don't announce updates.
+**ABIS** (Adaptive Behavioral Intelligence System) monitors LLM behavioral drift with a daily benchmark of 10 models. It detects when AI models silently change — shifts in tone, reasoning depth, safety calibration, or capability — even when providers don't announce updates.
 
 This MCP server gives Claude Code native access to:
-- **Live drift scores** across 11 major models (GPT-4o, Claude, Gemini, DeepSeek)
+- **Drift scores** for 10 models (GPT, Claude, Gemini, DeepSeek), refreshed by the daily benchmark
 - **9-score behavioral scorecards** (drift, coherence, entropy, alignment, and more)
 - **Silent version change detection** — catches updates providers don't announce
 - **Immune threat assessment** — prompt injection, coordinated attacks, organic drift
@@ -66,11 +66,13 @@ Add to your `.mcp.json`:
 | Tier | Tools | Key Required | What you get |
 |------|-------|-------------|---------|
 | **Free** | 15 | None | Drift scores, scorecards, version changes, reports |
-| **Pro** | 27 | `MCP_PRO_KEY` | + Scoring pipeline, memory analysis, immune system, correction simulation |
-| **Admin** | 37 | `ABIS_ADMIN_KEY` | + Benchmarking, stress tests, config changes, pipeline stats |
+| **Pro** | 27 | Pro plan key | + Scoring pipeline, memory analysis, immune system, correction simulation, benchmarking |
+| **Business** | 27 | Business plan key | The Pro toolset at a higher rate limit (see [Rate limits](#rate-limits)) |
+
+The 10 operator tools listed below are internal and are not part of any customer plan.
 
 <details>
-<summary><strong>Pro/Admin connection</strong></summary>
+<summary><strong>Pro/Business connection</strong></summary>
 
 ```json
 {
@@ -88,14 +90,14 @@ Add to your `.mcp.json`:
 
 </details>
 
-## 37 Tools
+## Tools (27 customer + 10 internal)
 
 ### Free Tier (15 tools)
 
 | Tool | Description |
 |------|-------------|
 | `abis_ambient_status` | Quick snapshot of all models — call at session start |
-| `abis_get_drift_scores` | Live drift scores for all 11 monitored models |
+| `abis_get_drift_scores` | Latest drift scores for the 10 benchmarked models |
 | `abis_get_scorecard` | Full 9-score breakdown (drift, coherence, entropy, alignment, etc.) |
 | `abis_whisper` | Contextual status line (clear / monitor / alert / critical) |
 | `abis_drift_gate` | Pre-response drift interceptor (Layer 3) |
@@ -149,14 +151,16 @@ After installing, you get two built-in skills:
 - **`/abis-ops`** — Daily health check: drift snapshot, version changes, stability ranking, cost summary
 - **`/abis-alerts`** — Investigate a drift alert: scorecard deep-dive, CAS trends, threat classification, correction recommendation
 
-## Models Monitored
+## Models Benchmarked
+
+The public leaderboard benchmarks these 10 models once a day. Scores reflect the latest daily run.
 
 | Provider | Models |
 |----------|--------|
-| **OpenAI** | gpt-4o, gpt-5.2, gpt-5.2-instant |
+| **OpenAI** | gpt-4o, gpt-5.2, gpt-5.4 |
 | **Anthropic** | claude-opus-4.6, claude-sonnet-4.5, claude-haiku-4.5 |
 | **DeepSeek** | deepseek-v3.2, deepseek-r1 |
-| **Google** | gemini-2.5-pro, gemini-2.5-flash, gemini-3-flash |
+| **Google** | gemini-2.5-flash, gemini-3-flash |
 
 ## Try It
 
@@ -165,7 +169,7 @@ After installing, you get two built-in skills:
 "Run ABIS daily check"
 "Has Claude Sonnet drifted in the last 7 days?"
 "Generate an EU AI Act compliance report"
-"Which model is most stable right now?"
+"Which model has been most stable this week?"
 "Have any models had silent version updates this week?"
 "Show me the cost vs drift matrix"
 ```
@@ -205,14 +209,33 @@ abis-mcp/
 ├── config.js         # Environment config
 ├── db.js             # MongoDB persistence
 ├── api.js            # Railway API proxy with circuit breaker
+├── auth.js           # API key → plan resolution (re-checked for live sessions)
+├── tiers.js          # Plan → toolset rules
+├── ratelimit.js      # Per-key / per-IP rate limits
 ├── tools/            # 37 tool implementations (one per file)
 └── skills/           # /abis-ops and /abis-alerts
 ```
 
 - **Dual transport**: SSE (HTTP for cloud) + stdio (Claude Desktop/Code)
-- **Rate limiting**: 60 req/min global; per-tier limits (free=30, pro=120, admin=300)
+- **Rate limiting**: see [Rate limits](#rate-limits)
 - **Backend**: Proxies to ABIS FastAPI on Railway
 - **Persistence**: MongoDB Atlas (sessions, scores, conversations, benchmarks)
+
+## Rate limits
+
+Limits are per minute and count every MCP message (tool calls, tool listings, pings).
+
+| Plan | Limit | Counted per |
+|------|-------|-------------|
+| **Free** (no key) | 30 MCP messages/min, inside a 60 requests/min cap across all endpoints | IP address |
+| **Pro** | 120 requests/min | API key |
+| **Business** | 200 requests/min | API key |
+
+- A request with a recognised Pro or Business key counts only against that key, not the per-IP cap, so the full plan limit is reachable from one machine.
+- At most 5 open SSE connections per IP.
+- `abis_run_benchmark` is also capped by the backend for all users together: a full run can start at most twice a minute and only one runs at a time. A second start while one is running is refused with a clear message.
+- Plan changes apply to open connections: a key is re-checked at least every 30 seconds, so a deactivated key drops to the Free toolset without reconnecting. (If the key database is unreachable, the last confirmed paid plan is kept for at most 5 minutes, then the key drops to Free.)
+- A key that has not been looked up yet is held to the per-IP cap when it opens a connection, until its first lookup succeeds.
 
 ## Contributing
 

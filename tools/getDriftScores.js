@@ -2,7 +2,7 @@ import { apiGet } from '../api.js';
 
 export default {
   name: 'abis_get_drift_scores',
-  description: 'Get live behavioral drift scores for all 8 monitored LLM models (gpt-4o, claude-opus-4.6, claude-sonnet-4.5, claude-haiku-4.5, deepseek-v3.2, deepseek-r1, gpt-5.2, gpt-5.2-instant). Returns model name, drift score, and prompt count. Use to answer "which model has lowest drift right now?"',
+  description: 'Get the latest behavioral drift scores (from the daily benchmark) for the 10 benchmarked LLM models (gpt-4o, gpt-5.2, gpt-5.4, claude-opus-4.6, claude-sonnet-4.5, claude-haiku-4.5, deepseek-v3.2, deepseek-r1, gemini-2.5-flash, gemini-3-flash). Returns model name, drift score, and prompt count. Use to answer "which model has the lowest drift?"',
   inputSchema: {
     type: 'object',
     properties: {
@@ -27,7 +27,7 @@ export default {
     // Find the run with most data
     const best = aggregate.benchmarks.reduce((a, b) => (b.total_calls > a.total_calls ? b : a));
 
-    const lines = ['ABIS Live Drift Scores', '━━━━━━━━━━━━━━━━━━━━━━'];
+    const lines = ['ABIS Latest Drift Scores (daily benchmark)', '━━━━━━━━━━━━━━━━━━━━━━'];
     if (best.models) {
       best.models.forEach(m => {
         const score = m.avg_drift != null ? m.avg_drift.toFixed(3) : 'N/A';

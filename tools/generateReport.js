@@ -136,7 +136,7 @@ function buildInvestorBrief(latest, all) {
     'TECHNOLOGY:',
     '  - Bio-inspired modular architecture (patent-protected)',
     '  - V2 XGBoost model trained on large-scale behavioral dataset',
-    '  - Real-time correction loop with 8 strategies',
+    '  - Automated correction loop with 8 strategies',
     '  - KEDH (Koopman-Ergodic Drift Horizon) predictive system',
   ];
   return lines.join('\n');

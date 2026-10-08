@@ -1,7 +1,7 @@
 {
   "name": "abis-drift-monitor",
   "display_name": "ABIS — AI Behavioral Drift Monitor",
-  "description": "Real-time behavioral drift detection for 11 LLMs. Up to 27 tools across Free/Pro/Business plans: live drift scores, 9-score scorecards, silent version change detection, autonomous correction, immune threat assessment, and EU AI Act compliance reporting. Backed by Patent GB2521226.7.",
+  "description": "Behavioral drift detection for 10 LLMs, benchmarked daily. Up to 27 tools across Free/Pro/Business plans: drift scores, 9-score scorecards, silent version change detection, autonomous correction, immune threat assessment, and EU AI Act compliance reporting. Backed by Patent GB2521226.7.",
   "version": "3.5.0",
   "claude_plugin_version": "1.0",
   "author": "CIJ Labs",
@@ -28,14 +28,14 @@
   "tiers": {
     "free": { "tools": 15, "key_required": false },
     "pro": { "tools": 27, "key_required": true, "key_env": "MCP_PRO_KEY" },
-    "admin": { "tools": 37, "key_required": true, "key_env": "ABIS_ADMIN_KEY" }
+    "business": { "tools": 27, "key_required": true }
   },
-  "tool_count": 37,
+  "tool_count": 27,
   "models_monitored": [
-    "gpt-4o", "gpt-5.2", "gpt-5.2-instant",
+    "gpt-4o", "gpt-5.2", "gpt-5.4",
     "claude-opus-4.6", "claude-sonnet-4.5", "claude-haiku-4.5",
     "deepseek-v3.2", "deepseek-r1",
-    "gemini-2.5-pro", "gemini-2.5-flash", "gemini-3-flash"
+    "gemini-2.5-flash", "gemini-3-flash"
   ],
   "patent": "GB2521226.7"
 }

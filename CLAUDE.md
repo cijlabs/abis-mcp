@@ -7,7 +7,7 @@ MCP (Model Context Protocol) server for ABIS. **37 tools v3.5.0**, dual-mode SSE
 ```bash
 npm install        # Install dependencies
 npm run dev        # Start with --watch (port 3100)
-node index.js      # Start MCP server (stdio mode)
+node index.js      # Start MCP server (SSE mode; add --stdio for stdio = local admin)
 ```
 
 ## Architecture
@@ -17,14 +17,18 @@ node index.js      # Start MCP server (stdio mode)
 - **Auth:** `ABIS_ADMIN_KEY` sent as `X-Admin-Key` (GET) and `X-API-Key` (POST)
 
 ## Security
-- Per-tool auth gates (free/pro/admin tiers)
-- Input validation with 11-model allowlist
-- Per-key rate limits: free=30, pro=120, admin=300 req/min
+- Per-tool auth gates (free/pro/business customer tiers; admin = operator key or local stdio only)
+- Input validation with a 10-model allowlist (the models the leaderboard benchmarks daily)
+- Rate limits: paid keys per key (pro=120, business=200, admin=300 req/min); free per IP (30 MCP messages/min inside a 60 req/min IP cap)
+- A live SSE session re-resolves its key on every POST /messages (30s cache), so a deactivated key drops to free
 - Hono CVE patched
 
 ## Key Files
 ```
 index.js           # Entry point, registers all 37 tools
+auth.js            # Key -> tier resolver (30s cache, outage grace) + live-session refresh
+tiers.js           # Plan -> tier -> toolset rules
+ratelimit.js       # Rate-limit buckets (per key for paid, per IP for free)
 config.js          # Environment variable exports
 db.js              # MongoDB connection, index creation
 api.js             # Railway API fetch wrapper (10s timeout)
@@ -49,8 +53,8 @@ tools/*.js         # One file per tool (37 files)
 - 0.65-0.90: alert (red)
 - >0.90: critical — likely baseline issue, not genuine drift
 
-## Monitored Models (11)
-gpt-4o, claude-opus-4.6, claude-sonnet-4.5, claude-haiku-4.5, deepseek-v3.2, deepseek-r1, gpt-5.2, gpt-5.2-instant, gemini-2.5-pro, gemini-2.5-flash, gemini-3-flash
+## Benchmarked Models (10, daily; no hourly or real-time claims)
+gpt-4o, gpt-5.2, gpt-5.4, claude-opus-4.6, claude-sonnet-4.5, claude-haiku-4.5, deepseek-v3.2, deepseek-r1, gemini-2.5-flash, gemini-3-flash
 
 ## Deploy
 Railway project: loyal-victory

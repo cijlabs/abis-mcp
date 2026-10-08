@@ -1,6 +1,17 @@
 import { v4 as uuid } from 'uuid';
-import { apiPost } from '../api.js';
+import { apiPostResult } from '../api.js';
 import { insertDoc } from '../db.js';
+
+// The backend caps benchmark routes for ALL callers (the MCP calls them with one key):
+// /benchmark/run allows 2 starts/min and one run at a time (409 while one runs);
+// /benchmark/single is rate-capped too (429). Say so instead of "offline".
+// Backend `detail` text is logged by api.js but never echoed to the customer.
+function failureText(r, label) {
+  if (r.status === 409) return 'ABIS: A full benchmark run is already in progress (only one runs at a time, ~20 min). Try again once it finishes.';
+  if (r.status === 429) return `ABIS: ${label} is rate-limited right now (the limit is shared across all users). Try again in a minute.`;
+  if (r.status >= 400) return `ABIS: ${label} request was rejected (HTTP ${r.status}). Contact support if this persists.`;
+  return `ABIS: ${label} failed — Railway API offline.`;
+}
 
 export default {
   name: 'abis_run_benchmark',
@@ -22,8 +33,9 @@ export default {
       if (!args.model || !args.prompt) {
         return { content: [{ type: 'text', text: 'Error: single mode requires both model and prompt.' }] };
       }
-      const result = await apiPost('/benchmark/single', { model: args.model, prompt: args.prompt });
-      if (!result) return { content: [{ type: 'text', text: 'ABIS: Benchmark failed — Railway API offline.' }] };
+      const r = await apiPostResult('/benchmark/single', { model: args.model, prompt: args.prompt });
+      if (!r.ok || !r.data) return { content: [{ type: 'text', text: failureText(r, 'Benchmark') }] };
+      const result = r.data;
 
       await insertDoc('mcp_benchmark_triggers', {
         session_id: sessionId, timestamp: new Date(), triggered_by: 'user_request',
@@ -33,8 +45,9 @@ export default {
     }
 
     if (args.mode === 'full') {
-      const result = await apiPost('/benchmark/run', {});
-      if (!result) return { content: [{ type: 'text', text: 'ABIS: Full benchmark failed — Railway API offline.' }] };
+      const r = await apiPostResult('/benchmark/run', {});
+      if (!r.ok || !r.data) return { content: [{ type: 'text', text: failureText(r, 'Full benchmark') }] };
+      const result = r.data;
 
       await insertDoc('mcp_benchmark_triggers', {
         session_id: sessionId, timestamp: new Date(), triggered_by: 'user_request',

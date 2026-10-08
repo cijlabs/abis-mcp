@@ -1,5 +1,5 @@
 import { v4 as uuid } from 'uuid';
-import { apiPost } from '../api.js';
+import { apiPostResult } from '../api.js';
 import { insertDoc } from '../db.js';
 import { AMBIENT_DRIFT_THRESHOLD, AMBIENT_CRITICAL_THRESHOLD } from '../config.js';
 
@@ -48,14 +48,18 @@ export default {
     const sessionId = sessionCtx?.sessionId || 'unknown';
 
     // Score via Railway
-    const result = await apiPost('/benchmark/single', {
+    const r = await apiPostResult('/benchmark/single', {
       model: model,
       prompt: message.substring(0, 5000),
     });
 
-    if (!result) {
-      return { content: [{ type: 'text', text: 'ABIS scoring unavailable — Railway API offline. Continuing without drift data.' }] };
+    if (!r.ok || !r.data) {
+      const why = r.status === 429
+        ? 'ABIS scoring is rate-limited right now (shared limit) — try again in a minute. Continuing without drift data.'
+        : 'ABIS scoring unavailable — Railway API offline. Continuing without drift data.';
+      return { content: [{ type: 'text', text: why }] };
     }
+    const result = r.data;
 
     const drift = result.drift_score || 0;
     const scorecard = result.scorecard || {};
