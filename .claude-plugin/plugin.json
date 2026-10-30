@@ -24,9 +24,9 @@
     "skills/abis-alerts.md"
   ],
   "requires_auth": false,
-  "getting_started": "Once installed, ask: 'What is the current drift score for GPT-4o?' or 'Run ABIS daily check'. No API key required for the Free tier (15 tools). Upgrade to Pro or Business for the full customer toolset at https://cijlabs.com/pricing.",
+  "getting_started": "Once installed, ask: 'What is the current drift score for GPT-4o?' or 'Run ABIS daily check'. No API key required for the Free tier (13 tools). Upgrade to Pro or Business for the full customer toolset at https://cijlabs.com/pricing.",
   "tiers": {
-    "free": { "tools": 15, "key_required": false },
+    "free": { "tools": 13, "key_required": false },
     "pro": { "tools": 27, "key_required": true, "key_env": "MCP_PRO_KEY" },
     "admin": { "tools": 37, "key_required": true, "key_env": "ABIS_ADMIN_KEY" }
   },

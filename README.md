@@ -90,7 +90,7 @@ Add to your `.mcp.json`:
 
 ## 37 Tools
 
-### Free Tier (15 tools)
+### Free Tier (13 tools)
 
 | Tool | Description |
 |------|-------------|
@@ -104,16 +104,16 @@ Add to your `.mcp.json`:
 | `abis_version_changes` | All detected silent version changes across models |
 | `abis_memory_versions` | Silent version change detection history per model |
 | `abis_memory_compare` | Cross-model stability ranking |
-| `abis_corrector_strategies` | List all 8 correction strategies with severity levels |
 | `abis_nervous_status` | Event bus health, registered handlers, recent event log |
 | `abis_monitoring_config` | Current phase, tier assignments, cost estimate |
 | `abis_ears_status` | EARS webhook sources: Datadog, PagerDuty, Zendesk, Intercom |
-| `abis_generate_report` | 5 report types: daily_summary, drift_alert, migration_report, compliance_doc, investor_brief |
 
-### Pro Tier (+12 tools)
+### Pro Tier (+14 tools)
 
 | Tool | Description |
 |------|-------------|
+| `abis_generate_report` | 5 report types: daily_summary, drift_alert, migration_report, compliance_doc, investor_brief |
+| `abis_corrector_strategies` | List all 8 correction strategies with severity levels |
 | `abis_score_message` | Score any text through the behavioral pipeline |
 | `abis_conversation_history` | Scored conversation log with drift per turn |
 | `abis_memory_profile` | Full 30-day behavioral memory for a model |

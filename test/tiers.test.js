@@ -25,9 +25,11 @@ const proOnly = setFromSource('PRO_ONLY_TOOLS');
 
 // Real tool names, straight from the tool definitions
 const realNames = new Set();
+const toolSource = new Map(); // tool name -> source of its tools/*.js file
 for (const f of readdirSync(new URL('tools/', root)).filter(f => f.endsWith('.js'))) {
-  const m = readFileSync(new URL(`tools/${f}`, root), 'utf8').match(/name:\s*'(abis_[a-z0-9_]+)'/);
-  if (m) realNames.add(m[1]);
+  const text = readFileSync(new URL(`tools/${f}`, root), 'utf8');
+  const m = text.match(/name:\s*'(abis_[a-z0-9_]+)'/);
+  if (m) { realNames.add(m[1]); toolSource.set(m[1], text); }
 }
 const allTools = [...realNames].map(name => ({ name }));
 const sets = { freeNames, proNames, adminOnly };
@@ -97,4 +99,53 @@ test('rate limits and denial messages', () => {
 
 test('admin (operator key / local stdio) still has every tool', () => {
   assert.equal(selectTools(allTools, 'admin', sets).length, realNames.size);
+});
+
+// api.js sends the operator ABIS_ADMIN_KEY on every backend call, so a tool's tier is
+// the only thing between a keyless session and an admin-only backend route. These
+// routes became admin-only in abis-drift-monitor on 2026-10-30: /report/generate spends
+// Groq credit, /corrector/strategies carries internal identifiers, /monitoring/cost-report
+// shows internal running costs.
+const PAID_OR_INTERNAL_ROUTES = ['/report/generate', '/corrector/strategies', '/monitoring/cost-report'];
+
+test('tools that proxy paid or internal backend routes are never Free', () => {
+  const proxies = [...toolSource].filter(([, text]) => PAID_OR_INTERNAL_ROUTES.some(r => text.includes(`'${r}'`)));
+  assert.deepEqual(proxies.map(([n]) => n).sort(),
+    ['abis_corrector_strategies', 'abis_cost_report', 'abis_generate_report']);
+  const freeListed = new Set(selectTools(allTools, 'free', sets).map(t => t.name));
+  for (const [name] of proxies) {
+    assert.ok(!freeNames.has(name), `${name} must not be in FREE_TOOL_NAMES`);
+    assert.ok(!freeListed.has(name), `${name} must not be listed to a free session`);
+    assert.ok(proOnly.has(name) || adminOnly.has(name), `${name} must be gated in PRO_ONLY_TOOLS or ADMIN_ONLY_TOOLS`);
+    assert.equal(isToolAllowed(name, 'free', { adminOnly, proOnly }), false, `${name} @ free`);
+    assert.equal(isToolAllowed(name, 'pro', { adminOnly, proOnly }), true, `${name} @ pro`);
+  }
+});
+
+test('PRO_ONLY_TOOLS is exactly the customer tools that are not Free', () => {
+  const expected = [...proNames].filter(n => !freeNames.has(n)).sort();
+  assert.deepEqual([...proOnly].sort(), expected);
+});
+
+test('published tool counts match the tier sets (cijlabs.com/pricing shows the same numbers)', () => {
+  const free = freeNames.size, pro = proNames.size, all = realNames.size;
+  // Changing a tier changes the pricing table on cijlabs.com too: update both together.
+  assert.equal(free, 13, 'Free tool count changed: update cijlabs.com/pricing, README and plugin.json');
+  assert.equal(pro, 27, 'Pro tool count changed: update cijlabs.com/pricing, README and plugin.json');
+
+  const plugin = JSON.parse(readFileSync(new URL('.claude-plugin/plugin.json', root), 'utf8'));
+  assert.equal(plugin.tiers.free.tools, free, 'plugin.json tiers.free.tools');
+  assert.equal(plugin.tiers.pro.tools, pro, 'plugin.json tiers.pro.tools');
+  assert.equal(plugin.tiers.admin.tools, all, 'plugin.json tiers.admin.tools');
+  assert.equal(plugin.tool_count, all, 'plugin.json tool_count');
+  assert.match(plugin.getting_started, new RegExp(`Free tier \\(${free} tools\\)`));
+
+  const readme = readFileSync(new URL('README.md', root), 'utf8');
+  assert.match(readme, new RegExp(`### Free Tier \\(${free} tools\\)`));
+  assert.match(readme, new RegExp(`### Pro Tier \\(\\+${pro - free} tools\\)`));
+  assert.match(readme, new RegExp(`## ${all} Tools`));
+  for (const f of ['package.json', 'server.json']) {
+    const desc = JSON.parse(readFileSync(new URL(f, root), 'utf8')).description;
+    assert.match(desc, new RegExp(`up to ${pro} tools`, 'i'), `${f} description`);
+  }
 });

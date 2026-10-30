@@ -131,15 +131,19 @@ const FREE_TOOL_NAMES = new Set([
   'abis_version_changes',
   'abis_memory_versions',
   'abis_memory_compare',
-  'abis_corrector_strategies',
   'abis_nervous_status',
   'abis_monitoring_config',
   'abis_ears_status',
-  'abis_generate_report',
 ]);
 
+// abis_generate_report and abis_corrector_strategies were Free until 2026-10-30.
+// Both proxy backend routes that are now admin-only (/report/generate spends Groq
+// credit; /corrector/strategies carries internal identifiers), and this server
+// calls them with the operator key, so a Free (keyless) session must not reach them.
 const PRO_TOOL_NAMES = new Set([
   ...FREE_TOOL_NAMES,
+  'abis_generate_report',
+  'abis_corrector_strategies',
   'abis_score_message',
   'abis_conversation_history',
   'abis_memory_profile',
@@ -288,6 +292,8 @@ const ADMIN_ONLY_TOOLS = new Set([
 ]);
 
 const PRO_ONLY_TOOLS = new Set([
+  'abis_generate_report',
+  'abis_corrector_strategies',
   'abis_score_message',
   'abis_conversation_history',
   'abis_memory_profile',
